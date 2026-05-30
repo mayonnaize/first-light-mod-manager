@@ -299,7 +299,7 @@ pub fn uninstall_mod(game_path: String, lang: String) -> Result<String, String> 
 // ─── check_updates ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn check_updates(current_version: String, mod_id: String) -> Result<NexusRelease, String> {
+pub async fn check_updates(current_version: String, mod_id: String, api_key: Option<String>) -> Result<NexusRelease, String> {
     if mod_id == "0" || mod_id.is_empty() {
         return Ok(NexusRelease {
             version: "0.1.0".into(),
@@ -311,9 +311,17 @@ pub async fn check_updates(current_version: String, mod_id: String) -> Result<Ne
     let url = format!("https://api.nexusmods.com/v1/games/007firstlight/mods/{}.json", mod_id);
     let client = reqwest::Client::new();
 
-    let resp = client
+    let mut builder = client
         .get(&url)
-        .header("User-Agent", "First-Light-Mod-Manager/0.1.0")
+        .header("User-Agent", "First-Light-Mod-Manager/0.1.0");
+
+    if let Some(ref key) = api_key {
+        if !key.trim().is_empty() {
+            builder = builder.header("apikey", key.trim());
+        }
+    }
+
+    let resp = builder
         .send()
         .await
         .map_err(|e| e.to_string())?;

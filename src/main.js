@@ -5,8 +5,11 @@ const { openUrl } = window.__TAURI__.opener;
 // ─── Configurações Gerais ─────────────────────────────────────────────
 const NEXUS_GAME_URL = 'https://www.nexusmods.com/007firstlight';
 const DISCORD_URL = 'https://discord.gg/aMfk6wgA';
-const NEXUS_MOD_ID = '0'; // Defina o ID do mod no Nexus para atualizações automáticas (0 para desativar)
-const NEXUS_MOD_URL = NEXUS_MOD_ID !== '0' ? `https://www.nexusmods.com/007firstlight/mods/${NEXUS_MOD_ID}` : NEXUS_GAME_URL;
+
+function getNexusModUrl() {
+  const modId = localStorage.getItem('nexusModId') || '0';
+  return modId !== '0' ? `https://www.nexusmods.com/007firstlight/mods/${modId}` : NEXUS_GAME_URL;
+}
 
 // ─── Dicionário de Traduções (i18n) ──────────────────────────────────
 const translations = {
@@ -51,6 +54,8 @@ const translations = {
     btn_browse: "Browse",
     lbl_api_key: "API Key (optional — to check for updates)",
     placeholder_api_key: "Your Nexus Mods API key...",
+    lbl_mod_id: "Nexus Mod ID (0 to disable)",
+    placeholder_mod_id: "e.g., 123",
     lbl_auto_update: "Check for updates automatically",
     group_backup: "Backup",
     lbl_backup_status: "Original backup",
@@ -142,6 +147,8 @@ const translations = {
     btn_browse: "Alterar",
     lbl_api_key: "API Key (opcional — para verificar atualizações)",
     placeholder_api_key: "Sua API key do Nexus Mods...",
+    lbl_mod_id: "Nexus Mod ID (0 para desativar)",
+    placeholder_mod_id: "ex: 123",
     lbl_auto_update: "Verificar atualizações automaticamente",
     group_backup: "Backup",
     lbl_backup_status: "Backup original",
@@ -419,19 +426,28 @@ async function uninstallMod() {
 // ─── Verificar atualizações ───────────────────────────────────────────
 async function checkUpdates(showToast = false) {
   const lang = state.language;
-  if (NEXUS_MOD_ID === '0') {
+  const modId = localStorage.getItem('nexusModId') || '0';
+  const apiKey = localStorage.getItem('nexusApiKey') || '';
+
+  if (modId === '0' || !modId) {
     if (showToast) toast(translations[lang].updates_disabled, 'info');
     return;
   }
   try {
-    const result = await invoke('check_updates', { currentVersion: state.modVersion || '0.1.0', modId: NEXUS_MOD_ID });
+    const result = await invoke('check_updates', { 
+      currentVersion: state.modVersion || '0.1.0', 
+      modId: modId,
+      apiKey: apiKey || null
+    });
     if (result.has_update) {
       const banner = document.getElementById('update-banner');
       banner.style.display = 'flex';
       document.getElementById('update-version-text').textContent = translations[lang].update_banner_ver.replace('{version}', result.version);
-      document.getElementById('btn-download-update').href = result.url;
-    } else if (showToast) {
-      toast(translations[lang].toast_latest_ver, 'success');
+    } else {
+      document.getElementById('update-banner').style.display = 'none';
+      if (showToast) {
+        toast(translations[lang].toast_latest_ver, 'success');
+      }
     }
   } catch (err) {
     if (showToast) toast(translations[state.language].err_check_updates + err, 'error');
@@ -490,6 +506,7 @@ async function selectGamePath() {
       document.getElementById('step-game-path-text').textContent = selected;
       document.getElementById('input-game-path').value = selected;
       document.getElementById('btn-open-folder').disabled = false;
+      localStorage.setItem('gamePath', selected);
       await getModStatus();
       toast(translations[state.language].toast_game_dir_configured, 'success');
     }
@@ -535,13 +552,31 @@ function setupDropZone() {
 // ─── Salvar configurações ─────────────────────────────────────────────
 function saveSettings() {
   const path = document.getElementById('input-game-path').value.trim();
+  const apiKey = document.getElementById('input-nexus-key').value.trim();
+  const modId = document.getElementById('input-mod-id').value.trim() || '0';
+  const autoUpdate = document.getElementById('check-auto-update').checked;
+
   if (path) {
     state.gamePath  = path;
     state.gameFound = true;
     document.getElementById('game-path-display').textContent = path;
     document.getElementById('step-game-path-text').textContent = path;
+    localStorage.setItem('gamePath', path);
   }
+  
+  localStorage.setItem('nexusApiKey', apiKey);
+  localStorage.setItem('nexusModId', modId);
+  localStorage.setItem('autoCheckUpdates', autoUpdate.toString());
+
   toast(translations[state.language].toast_settings_saved, 'success');
+
+  // Recheck status and updates
+  getModStatus();
+  if (autoUpdate) {
+    checkUpdates(false).catch(() => {});
+  } else {
+    document.getElementById('update-banner').style.display = 'none';
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -589,7 +624,7 @@ function bindEvents() {
   // Update banner
   document.getElementById('btn-download-update').addEventListener('click', e => {
     e.preventDefault();
-    openLink(NEXUS_MOD_URL);
+    openLink(getNexusModUrl());
   });
 
   // About links
@@ -603,11 +638,36 @@ function bindEvents() {
 async function init() {
   bindEvents();
   setupDropZone();
-  // Load persisted language
+  
+  // Load persisted settings
   state.language = localStorage.getItem('language') || 'en';
   applyLanguage(state.language);
-  await detectGame();
-  checkUpdates(false).catch(() => {});
+  
+  const savedPath = localStorage.getItem('gamePath');
+  if (savedPath) {
+    state.gamePath = savedPath;
+    state.gameFound = true;
+    document.getElementById('game-path-display').textContent = savedPath;
+    document.getElementById('step-game-path-text').textContent = savedPath;
+    document.getElementById('input-game-path').value = savedPath;
+    document.getElementById('btn-open-folder').disabled = false;
+    await getModStatus();
+  } else {
+    await detectGame();
+  }
+
+  // Load Nexus settings
+  const savedApiKey = localStorage.getItem('nexusApiKey') || '';
+  const savedModId = localStorage.getItem('nexusModId') || '0';
+  const savedAutoUpdate = localStorage.getItem('autoCheckUpdates') !== 'false';
+  
+  document.getElementById('input-nexus-key').value = savedApiKey;
+  document.getElementById('input-mod-id').value = savedModId;
+  document.getElementById('check-auto-update').checked = savedAutoUpdate;
+
+  if (savedAutoUpdate) {
+    checkUpdates(false).catch(() => {});
+  }
 }
 
 window.addEventListener('DOMContentLoaded', init);
