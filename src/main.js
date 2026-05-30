@@ -102,6 +102,12 @@ const translations = {
     update_banner_ver: "Version {version} available on Nexus Mods.",
     toast_latest_ver: "You already have the latest version!",
     game_not_found_manual: "Game not found. Configure path manually.",
+    title_installed_mods: "Installed Mods",
+    no_mods_installed: "No mods installed yet. Go to \"Install Mod\" to add one!",
+    confirm_delete_mod: "Are you sure you want to permanently delete this mod?",
+    mod_status_active: "Active",
+    mod_status_inactive: "Inactive",
+    author_by: "by",
     steam_label: "🟦 Steam",
     epic_label: "🟪 Epic Games",
     unknown_label: "❓ Unknown"
@@ -195,6 +201,12 @@ const translations = {
     update_banner_ver: "Versão {version} disponível no Nexus Mods.",
     toast_latest_ver: "Você já tem a versão mais recente!",
     game_not_found_manual: "Jogo não encontrado. Configure o caminho manualmente.",
+    title_installed_mods: "Mods Instalados",
+    no_mods_installed: "Nenhum mod instalado ainda. Vá em \"Instalar Mod\" para adicionar um!",
+    confirm_delete_mod: "Tem certeza que deseja excluir permanentemente este mod?",
+    mod_status_active: "Ativo",
+    mod_status_inactive: "Inativo",
+    author_by: "por",
     steam_label: "🟦 Steam",
     epic_label: "🟪 Epic Games",
     unknown_label: "❓ Desconhecido"
@@ -238,6 +250,7 @@ function applyLanguage(lang) {
   if (select) {
     select.value = lang;
   }
+  renderModList().catch(() => {});
 }
 
 // ─── Utilitários ──────────────────────────────────────────────────────
@@ -314,6 +327,7 @@ async function detectGame() {
       document.getElementById('game-path-display').style.color = 'var(--danger)';
       setModStatusUI(false, '', false);
     }
+    await renderModList();
   } catch (err) {
     console.error('detect_game error:', err);
     toast(translations[state.language].err_detecting + err, 'error');
@@ -393,6 +407,7 @@ async function installMod() {
     hideProgress();
     toast(result, 'success');
     await getModStatus();
+    await renderModList();
     // Volta para home
     document.getElementById('nav-home').click();
   } catch (err) {
@@ -417,6 +432,7 @@ async function uninstallMod() {
     const result = await invoke('uninstall_mod', { gamePath: state.gamePath, lang: state.language });
     toast(result, 'success');
     await getModStatus();
+    await renderModList();
   } catch (err) {
     toast(translations[state.language].err_uninstall + err, 'error');
     btn.disabled = false;
@@ -508,6 +524,7 @@ async function selectGamePath() {
       document.getElementById('btn-open-folder').disabled = false;
       localStorage.setItem('gamePath', selected);
       await getModStatus();
+      await renderModList();
       toast(translations[state.language].toast_game_dir_configured, 'success');
     }
   } catch (err) {
@@ -571,11 +588,102 @@ function saveSettings() {
   toast(translations[state.language].toast_settings_saved, 'success');
 
   // Recheck status and updates
-  getModStatus();
+  await getModStatus();
+  await renderModList();
   if (autoUpdate) {
     checkUpdates(false).catch(() => {});
   } else {
     document.getElementById('update-banner').style.display = 'none';
+  }
+}
+
+// ─── Renderizar Lista de Mods Instalados ─────────────────────────────────
+async function renderModList() {
+  const listSection = document.getElementById('mod-list-section');
+  const listGrid    = document.getElementById('mod-list-grid');
+  if (!listSection || !listGrid) return;
+
+  if (!state.gameFound || !state.gamePath) {
+    listSection.style.display = 'none';
+    return;
+  }
+
+  try {
+    const mods = await invoke('list_mods', { gamePath: state.gamePath });
+    listSection.style.display = 'block';
+
+    if (mods.length === 0) {
+      listGrid.innerHTML = `
+        <div class="no-mods-placeholder">
+          ${translations[state.language].no_mods_installed}
+        </div>
+      `;
+      return;
+    }
+
+    listGrid.innerHTML = '';
+    mods.forEach(m => {
+      const card = document.createElement('div');
+      card.className = 'mod-card';
+
+      const titleText = m.name;
+      const verBadge  = m.version ? `<span class="mod-card-version">v${m.version}</span>` : '';
+      const authorText = m.author ? `<span class="mod-card-author">${translations[state.language].author_by} ${m.author}</span>` : '';
+      const descText = m.description || m.filename;
+
+      card.innerHTML = `
+        <div class="mod-card-info">
+          <div class="mod-card-title-row">
+            <span class="mod-card-title">${titleText}</span>
+            ${verBadge}
+            ${authorText}
+          </div>
+          <div class="mod-card-desc">${descText}</div>
+        </div>
+        <div class="mod-card-controls">
+          <label class="toggle">
+            <input type="checkbox" class="toggle-mod-active" data-mod-id="${m.id}" ${m.active ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+          <button class="btn-delete-mod" data-mod-id="${m.id}" title="${translations[state.language].btn_uninstall}">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
+        </div>
+      `;
+
+      // Bind toggle change
+      card.querySelector('.toggle-mod-active').addEventListener('change', async (e) => {
+        const modId = e.target.getAttribute('data-mod-id');
+        const active = e.target.checked;
+        try {
+          await invoke('toggle_mod', { gamePath: state.gamePath, modId, active });
+          await getModStatus();
+          await renderModList();
+        } catch (err) {
+          toast(err, 'error');
+          e.target.checked = !active;
+        }
+      });
+
+      // Bind delete click
+      card.querySelector('.btn-delete-mod').addEventListener('click', async () => {
+        const modId = m.id;
+        const confirmed = confirm(translations[state.language].confirm_delete_mod);
+        if (!confirmed) return;
+        try {
+          await invoke('delete_mod', { gamePath: state.gamePath, modId });
+          await getModStatus();
+          await renderModList();
+        } catch (err) {
+          toast(err, 'error');
+        }
+      });
+
+      listGrid.appendChild(card);
+    });
+  } catch (err) {
+    console.error('list_mods error:', err);
+    listSection.style.display = 'none';
   }
 }
 
@@ -652,6 +760,7 @@ async function init() {
     document.getElementById('input-game-path').value = savedPath;
     document.getElementById('btn-open-folder').disabled = false;
     await getModStatus();
+    await renderModList();
   } else {
     await detectGame();
   }

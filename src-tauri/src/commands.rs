@@ -141,14 +141,19 @@ pub fn get_mod_status(game_path: String) -> ModStatus {
     if game_path.is_empty() {
         return ModStatus { installed: false, version: String::new(), backup_exists: false };
     }
-    let marker = PathBuf::from(&game_path).join(".flmm_installed");
     let backup = PathBuf::from(&game_path).join("Runtime_backup_original");
-    let installed = marker.exists();
-    let version = if installed {
-        fs::read_to_string(&marker).unwrap_or_default().trim().to_string()
-    } else {
-        String::new()
-    };
+    
+    // Check if there are any active mods
+    let mut installed = false;
+    let mut version = String::new();
+    
+    if let Ok(mods) = list_mods(game_path.clone()) {
+        installed = mods.iter().any(|m| m.active);
+        if installed {
+            version = "0.1.0".to_string(); // Fallback representation
+        }
+    }
+    
     ModStatus { installed, version, backup_exists: backup.exists() }
 }
 
@@ -248,6 +253,22 @@ fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let file = fs::File::open(zip_path).map_err(|e| format!("Error opening ZIP: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {}", e))?;
 
+    // First search for mod.json anywhere inside the zip
+    let mut metadata_content: Option<String> = None;
+    for i in 0..archive.len() {
+        if let Ok(mut zf) = archive.by_index(i) {
+            if zf.name().ends_with("mod.json") {
+                let mut buf = String::new();
+                if zf.read_to_string(&mut buf).is_ok() {
+                    metadata_content = Some(buf);
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut rpkg_files = Vec::new();
+
     for i in 0..archive.len() {
         let mut zf = archive.by_index(i).map_err(|e| e.to_string())?;
         let name = zf.name().to_string();
@@ -258,8 +279,19 @@ fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
             zf.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             fs::write(&out, &buf).map_err(|e| e.to_string())?;
             update_package_definition(dest, fname.to_str().unwrap())?;
+            rpkg_files.push(fname.to_str().unwrap().to_string());
         }
     }
+
+    // Write companion metadata files
+    if let Some(ref meta) = metadata_content {
+        for rpkg in &rpkg_files {
+            let id = rpkg.trim_end_matches(".rpkg");
+            let meta_path = dest.join(format!("{}.metadata.json", id));
+            let _ = fs::write(meta_path, meta);
+        }
+    }
+
     Ok(())
 }
 
@@ -355,5 +387,152 @@ pub fn open_game_folder(game_path: String) -> Result<(), String> {
         .arg(&game_path)
         .spawn()
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ─── Mod Toggle List implementation ──────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ModInfo {
+    pub id: String,
+    pub filename: String,
+    pub name: String,
+    pub author: String,
+    pub description: String,
+    pub version: String,
+    pub active: bool,
+}
+
+fn remove_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), String> {
+    let pkg_def = runtime.join("packagedefinition.txt");
+    if !pkg_def.exists() { return Ok(()); }
+    let content = fs::read_to_string(&pkg_def).map_err(|e| e.to_string())?;
+
+    let chunk = rpkg_name.trim_end_matches(".rpkg");
+    let entry = format!("@include {}", chunk);
+
+    let lines: Vec<&str> = content.lines()
+        .filter(|line| line.trim() != entry)
+        .collect();
+
+    let mut new_content = lines.join("\n");
+    if !new_content.is_empty() {
+        new_content.push('\n');
+    }
+    fs::write(&pkg_def, &new_content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
+    if game_path.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let runtime = PathBuf::from(&game_path).join("Runtime");
+    let backup = PathBuf::from(&game_path).join("Runtime_backup_original");
+
+    if !runtime.exists() {
+        return Ok(Vec::new());
+    }
+
+    let pkg_def = runtime.join("packagedefinition.txt");
+    let includes_content = if pkg_def.exists() {
+        fs::read_to_string(&pkg_def).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let mut mods = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&runtime) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rpkg") {
+                    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+                    let id = filename.trim_end_matches(".rpkg").to_string();
+
+                    if backup.exists() {
+                        let original_file = backup.join(&filename);
+                        if original_file.exists() {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+
+                    let meta_file = runtime.join(format!("{}.metadata.json", id));
+                    let mut name = id.clone();
+                    let mut author = String::new();
+                    let mut description = String::new();
+                    let mut version = String::new();
+
+                    if meta_file.exists() {
+                        if let Ok(content) = fs::read_to_string(&meta_file) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                name = json["name"].as_str().unwrap_or(&id).to_string();
+                                author = json["author"].as_str().unwrap_or("").to_string();
+                                description = json["description"].as_str().unwrap_or("").to_string();
+                                version = json["version"].as_str().unwrap_or("").to_string();
+                            }
+                        }
+                    }
+
+                    let entry_str = format!("@include {}", id);
+                    let active = includes_content.lines().any(|line| line.trim() == entry_str);
+
+                    mods.push(ModInfo {
+                        id,
+                        filename,
+                        name,
+                        author,
+                        description,
+                        version,
+                        active,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(mods)
+}
+
+#[tauri::command]
+pub fn toggle_mod(game_path: String, mod_id: String, active: bool) -> Result<(), String> {
+    if game_path.is_empty() || mod_id.is_empty() {
+        return Err("Invalid parameters.".into());
+    }
+
+    let runtime = PathBuf::from(&game_path).join("Runtime");
+    if active {
+        update_package_definition(&runtime, &format!("{}.rpkg", mod_id))?;
+    } else {
+        remove_package_definition(&runtime, &format!("{}.rpkg", mod_id))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_mod(game_path: String, mod_id: String) -> Result<(), String> {
+    if game_path.is_empty() || mod_id.is_empty() {
+        return Err("Invalid parameters.".into());
+    }
+
+    let runtime = PathBuf::from(&game_path).join("Runtime");
+    let mod_file = runtime.join(format!("{}.rpkg", mod_id));
+    let meta_file = runtime.join(format!("{}.metadata.json", mod_id));
+
+    let _ = remove_package_definition(&runtime, &format!("{}.rpkg", mod_id));
+
+    if mod_file.exists() {
+        fs::remove_file(mod_file).map_err(|e| e.to_string())?;
+    }
+    if meta_file.exists() {
+        let _ = fs::remove_file(meta_file);
+    }
+
     Ok(())
 }

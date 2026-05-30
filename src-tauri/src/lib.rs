@@ -11,7 +11,10 @@ pub fn run() {
             commands::install_mod,
             commands::uninstall_mod,
             commands::check_updates,
-            commands::open_game_folder
+            commands::open_game_folder,
+            commands::list_mods,
+            commands::toggle_mod,
+            commands::delete_mod
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao iniciar First Light Mod Manager");

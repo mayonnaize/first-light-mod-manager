@@ -720,3 +720,105 @@ html, body {
   fill: none;
   display: block;
 }
+
+/* ── Mod List & Cards ────────────────────────────────────────────────── */
+.mod-list-section {
+  margin-top: 32px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gold-light);
+  margin-bottom: 16px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mod-list-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mod-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all var(--transition);
+  backdrop-filter: blur(10px);
+}
+.mod-card:hover {
+  background: var(--bg-card-h);
+  border-color: var(--border-h);
+  transform: translateY(-2px);
+}
+.mod-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  padding-right: 16px;
+}
+.mod-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mod-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.mod-card-version {
+  font-size: 10px;
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--text-muted);
+}
+.mod-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.mod-card-author {
+  font-size: 10px;
+  color: var(--gold);
+}
+.mod-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.btn-delete-mod {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all var(--transition);
+  display: inline-flex;
+}
+.btn-delete-mod:hover {
+  color: var(--danger);
+  background: rgba(224,82,82,0.1);
+}
+.btn-delete-mod svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+.no-mods-placeholder {
+  padding: 24px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+}
