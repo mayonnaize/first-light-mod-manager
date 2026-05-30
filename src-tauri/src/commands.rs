@@ -28,7 +28,7 @@ pub struct NexusRelease {
 // ─── detect_game ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn detect_game() -> GameInfo {
+pub async fn detect_game() -> GameInfo {
     if let Some(path) = find_steam_game() {
         return GameInfo { found: true, path, platform: "steam".into() };
     }
@@ -137,7 +137,7 @@ fn extract_json_field(json: &str, field: &str) -> Option<String> {
 // ─── get_mod_status ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_mod_status(game_path: String) -> ModStatus {
+pub async fn get_mod_status(game_path: String) -> ModStatus {
     if game_path.is_empty() {
         return ModStatus { installed: false, version: String::new(), backup_exists: false };
     }
@@ -147,7 +147,7 @@ pub fn get_mod_status(game_path: String) -> ModStatus {
     let mut installed = false;
     let mut version = String::new();
     
-    if let Ok(mods) = list_mods(game_path.clone()) {
+    if let Ok(mods) = list_mods(game_path.clone()).await {
         installed = mods.iter().any(|m| m.active);
         if installed {
             version = "0.1.0".to_string(); // Fallback representation
@@ -158,7 +158,7 @@ pub fn get_mod_status(game_path: String) -> ModStatus {
 }
 
 #[tauri::command]
-pub fn install_mod(game_path: String, mod_path: String, lang: String) -> Result<String, String> {
+pub async fn install_mod(game_path: String, mod_path: String, lang: String) -> Result<String, String> {
     let is_pt = lang == "pt";
     if game_path.is_empty() { 
         return Err(if is_pt { "Caminho do jogo não informado." } else { "Game path not provided." }.into()); 
@@ -296,7 +296,7 @@ fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn uninstall_mod(game_path: String, lang: String) -> Result<String, String> {
+pub async fn uninstall_mod(game_path: String, lang: String) -> Result<String, String> {
     let is_pt = lang == "pt";
     if game_path.is_empty() { 
         return Err(if is_pt { "Caminho do jogo não informado." } else { "Game path not provided." }.into()); 
@@ -383,7 +383,7 @@ pub async fn check_updates(current_version: String, mod_id: String, api_key: Opt
 // ─── open_game_folder ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn open_game_folder(game_path: String) -> Result<(), String> {
+pub async fn open_game_folder(game_path: String) -> Result<(), String> {
     if game_path.is_empty() { return Err("No game directory configured.".into()); }
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
@@ -427,7 +427,7 @@ fn remove_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), Stri
 }
 
 #[tauri::command]
-pub fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
+pub async fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
     if game_path.is_empty() {
         return Ok(Vec::new());
     }
@@ -503,7 +503,7 @@ pub fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
 }
 
 #[tauri::command]
-pub fn toggle_mod(game_path: String, mod_id: String, active: bool) -> Result<(), String> {
+pub async fn toggle_mod(game_path: String, mod_id: String, active: bool) -> Result<(), String> {
     if game_path.is_empty() || mod_id.is_empty() {
         return Err("Invalid parameters.".into());
     }
@@ -519,7 +519,7 @@ pub fn toggle_mod(game_path: String, mod_id: String, active: bool) -> Result<(),
 }
 
 #[tauri::command]
-pub fn delete_mod(game_path: String, mod_id: String) -> Result<(), String> {
+pub async fn delete_mod(game_path: String, mod_id: String) -> Result<(), String> {
     if game_path.is_empty() || mod_id.is_empty() {
         return Err("Invalid parameters.".into());
     }
