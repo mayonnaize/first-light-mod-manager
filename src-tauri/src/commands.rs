@@ -156,8 +156,8 @@ pub fn get_mod_status(game_path: String) -> ModStatus {
 
 #[tauri::command]
 pub fn install_mod(game_path: String, mod_path: String) -> Result<String, String> {
-    if game_path.is_empty() { return Err("Caminho do jogo não informado.".into()); }
-    if mod_path.is_empty()  { return Err("Caminho do mod não informado.".into()); }
+    if game_path.is_empty() { return Err("Game path not provided.".into()); }
+    if mod_path.is_empty()  { return Err("Mod path not provided.".into()); }
 
     let game_dir   = PathBuf::from(&game_path);
     let runtime    = game_dir.join("Runtime");
@@ -165,27 +165,27 @@ pub fn install_mod(game_path: String, mod_path: String) -> Result<String, String
     let mod_file   = PathBuf::from(&mod_path);
 
     if !mod_file.exists() {
-        return Err(format!("Arquivo não encontrado: {}", mod_path));
+        return Err(format!("File not found: {}", mod_path));
     }
 
     let ext = mod_file.extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext != "rpkg" && ext != "zip" {
-        return Err("O arquivo deve ser .rpkg ou .zip".into());
+        return Err("File must be .rpkg or .zip".into());
     }
 
     // Cria Runtime se não existir
     if !runtime.exists() {
-        fs::create_dir_all(&runtime).map_err(|e| format!("Erro ao criar Runtime: {}", e))?;
+        fs::create_dir_all(&runtime).map_err(|e| format!("Error creating Runtime directory: {}", e))?;
     }
 
     // Backup (só se ainda não existe)
     if !backup.exists() {
-        copy_dir_all(&runtime, &backup).map_err(|e| format!("Erro no backup: {}", e))?;
+        copy_dir_all(&runtime, &backup).map_err(|e| format!("Error creating backup: {}", e))?;
     }
 
     if ext == "rpkg" {
         let dest = runtime.join(mod_file.file_name().unwrap());
-        fs::copy(&mod_file, &dest).map_err(|e| format!("Erro ao copiar RPKG: {}", e))?;
+        fs::copy(&mod_file, &dest).map_err(|e| format!("Error copying RPKG: {}", e))?;
         update_package_definition(&runtime, mod_file.file_name().unwrap().to_str().unwrap())?;
     } else {
         extract_rpkg_from_zip(&mod_file, &runtime)?;
@@ -193,9 +193,9 @@ pub fn install_mod(game_path: String, mod_path: String) -> Result<String, String
 
     let version = "0.1.0";
     fs::write(game_dir.join(".flmm_installed"), version)
-        .map_err(|e| format!("Erro ao gravar versão: {}", e))?;
+        .map_err(|e| format!("Error writing version: {}", e))?;
 
-    Ok(format!("Mod instalado com sucesso!"))
+    Ok(format!("Mod installed successfully!"))
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -234,8 +234,8 @@ fn update_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), Stri
 
 fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     use std::io::Read;
-    let file = fs::File::open(zip_path).map_err(|e| format!("Erro ao abrir ZIP: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("ZIP inválido: {}", e))?;
+    let file = fs::File::open(zip_path).map_err(|e| format!("Error opening ZIP: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {}", e))?;
 
     for i in 0..archive.len() {
         let mut zf = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -256,7 +256,7 @@ fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 
 #[tauri::command]
 pub fn uninstall_mod(game_path: String) -> Result<String, String> {
-    if game_path.is_empty() { return Err("Caminho do jogo não informado.".into()); }
+    if game_path.is_empty() { return Err("Game path not provided.".into()); }
 
     let game_dir = PathBuf::from(&game_path);
     let runtime  = game_dir.join("Runtime");
@@ -264,18 +264,18 @@ pub fn uninstall_mod(game_path: String) -> Result<String, String> {
     let marker   = game_dir.join(".flmm_installed");
 
     if !backup.exists() {
-        return Err("Backup não encontrado. Não é possível desinstalar com segurança.".into());
+        return Err("Backup not found. Cannot safely uninstall.".into());
     }
 
     if runtime.exists() {
-        fs::remove_dir_all(&runtime).map_err(|e| format!("Erro ao remover Runtime: {}", e))?;
+        fs::remove_dir_all(&runtime).map_err(|e| format!("Error removing Runtime directory: {}", e))?;
     }
 
-    copy_dir_all(&backup, &runtime).map_err(|e| format!("Erro ao restaurar backup: {}", e))?;
-    fs::remove_dir_all(&backup).map_err(|e| format!("Erro ao remover backup: {}", e))?;
+    copy_dir_all(&backup, &runtime).map_err(|e| format!("Error restoring backup: {}", e))?;
+    fs::remove_dir_all(&backup).map_err(|e| format!("Error removing backup directory: {}", e))?;
     let _ = fs::remove_file(&marker);
 
-    Ok("Mods desinstalados! Arquivos originais restaurados.".into())
+    Ok("Mods uninstalled! Original game files restored.".into())
 }
 
 // ─── check_updates ────────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ pub async fn check_updates(current_version: String, mod_id: String) -> Result<Ne
 
 #[tauri::command]
 pub fn open_game_folder(game_path: String) -> Result<(), String> {
-    if game_path.is_empty() { return Err("Nenhum caminho configurado.".into()); }
+    if game_path.is_empty() { return Err("No game directory configured.".into()); }
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
         .arg(&game_path)

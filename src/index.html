@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>007: First Light Mod Manager</title>
-  <meta name="description" content="Instale e gerencie mods (.rpkg) para o jogo 007: First Light de forma simples e segura." />
+  <meta name="description" content="Safely and easily install and manage mods (.rpkg) for 007: First Light." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -34,19 +34,19 @@
       <nav class="nav">
         <button class="nav-item active" data-tab="home" id="nav-home">
           <span class="nav-icon">🏠</span>
-          <span>Início</span>
+          <span>Home</span>
         </button>
         <button class="nav-item" data-tab="install" id="nav-install">
           <span class="nav-icon">📦</span>
-          <span>Instalar Mod</span>
+          <span>Install Mod</span>
         </button>
         <button class="nav-item" data-tab="settings" id="nav-settings">
           <span class="nav-icon">⚙️</span>
-          <span>Configurações</span>
+          <span>Settings</span>
         </button>
         <button class="nav-item" data-tab="about" id="nav-about">
           <span class="nav-icon">ℹ️</span>
-          <span>Sobre</span>
+          <span>About</span>
         </button>
       </nav>
 
@@ -68,7 +68,7 @@
       <section class="tab-panel active" id="tab-home">
         <div class="panel-header">
           <h1 class="panel-title">007: First Light</h1>
-          <p class="panel-subtitle">Gerenciador de Mods (.rpkg)</p>
+          <p class="panel-subtitle">Mod Manager (.rpkg)</p>
         </div>
 
         <!-- Card do jogo detectado -->
@@ -80,14 +80,14 @@
             </div>
           </div>
           <div class="game-card-info">
-            <div class="game-tag" id="platform-tag">Detectando...</div>
+            <div class="game-tag" id="platform-tag">Detecting...</div>
             <h2 class="game-title">007: First Light</h2>
-            <p class="game-path" id="game-path-display">Procurando instalação...</p>
+            <p class="game-path" id="game-path-display">Scanning for installation...</p>
 
             <div class="game-status-row">
               <div class="status-chip" id="mod-status-chip">
                 <span class="chip-dot"></span>
-                <span class="chip-text">Verificando...</span>
+                <span class="chip-text">Checking...</span>
               </div>
               <div class="status-chip version-chip" id="version-chip" style="display:none">
                 <span class="chip-text" id="installed-version-text"></span>
@@ -101,11 +101,11 @@
               </button>
               <button class="btn btn-ghost" id="btn-uninstall-main" disabled>
                 <span class="btn-icon">🗑️</span>
-                Desinstalar
+                Uninstall
               </button>
               <button class="btn btn-ghost" id="btn-open-folder" disabled>
                 <span class="btn-icon">📁</span>
-                Abrir Pasta
+                Open Folder
               </button>
             </div>
           </div>
@@ -115,23 +115,23 @@
         <div class="update-banner" id="update-banner" style="display:none">
           <div class="update-icon">🔔</div>
           <div class="update-text">
-            <strong>Nova versão disponível!</strong>
+            <strong>New version available!</strong>
             <span id="update-version-text"></span>
           </div>
-          <a href="#" class="btn btn-accent btn-sm" id="btn-download-update">Baixar</a>
+          <a href="#" class="btn btn-accent btn-sm" id="btn-download-update">Download</a>
         </div>
 
         <!-- Status cards -->
         <div class="status-grid">
           <div class="status-card">
             <div class="status-card-icon">🎮</div>
-            <div class="status-card-label">Jogo</div>
+            <div class="status-card-label">Game</div>
             <div class="status-card-value" id="sc-game">—</div>
           </div>
           <div class="status-card">
             <div class="status-card-icon">📦</div>
             <div class="status-card-label">Mods</div>
-            <div class="status-card-value" id="sc-mod">Não instalado</div>
+            <div class="status-card-value" id="sc-mod">Not installed</div>
           </div>
           <div class="status-card">
             <div class="status-card-icon">💾</div>
@@ -140,7 +140,7 @@
           </div>
           <div class="status-card">
             <div class="status-card-icon">🔗</div>
-            <div class="status-card-label">Plataforma</div>
+            <div class="status-card-label">Platform</div>
             <div class="status-card-value" id="sc-platform">—</div>
           </div>
         </div>
@@ -149,8 +149,8 @@
       <!-- TAB: INSTALAR -->
       <section class="tab-panel" id="tab-install">
         <div class="panel-header">
-          <h1 class="panel-title">Instalar Mod</h1>
-          <p class="panel-subtitle">Selecione o arquivo .rpkg ou .zip do mod</p>
+          <h1 class="panel-title">Install Mod</h1>
+          <p class="panel-subtitle">Select the mod's .rpkg or .zip file</p>
         </div>
 
         <div class="install-flow">
@@ -158,13 +158,13 @@
           <div class="flow-step" id="step-game">
             <div class="step-number">1</div>
             <div class="step-content">
-              <h3 class="step-title">Jogo Detectado</h3>
+              <h3 class="step-title">Game Detected</h3>
               <div class="step-path-box" id="step-game-path">
                 <span class="path-icon">📁</span>
-                <span class="path-text" id="step-game-path-text">Não encontrado</span>
+                <span class="path-text" id="step-game-path-text">Not found</span>
               </div>
               <button class="btn btn-ghost btn-sm" id="btn-manual-path">
-                📂 Selecionar manualmente
+                📂 Select manually
               </button>
             </div>
           </div>
@@ -174,12 +174,12 @@
           <div class="flow-step" id="step-mod-file">
             <div class="step-number">2</div>
             <div class="step-content">
-              <h3 class="step-title">Arquivo do Mod</h3>
+              <h3 class="step-title">Mod File</h3>
               <div class="drop-zone" id="drop-zone">
                 <div class="drop-icon">📦</div>
-                <p class="drop-label">Arraste o arquivo <strong>.rpkg</strong> ou <strong>.zip</strong> aqui</p>
-                <p class="drop-sub">ou</p>
-                <button class="btn btn-primary btn-sm" id="btn-browse-mod">Procurar arquivo</button>
+                <p class="drop-label">Drag and drop <strong>.rpkg</strong> or <strong>.zip</strong> file here</p>
+                <p class="drop-sub">or</p>
+                <button class="btn btn-primary btn-sm" id="btn-browse-mod">Browse file</button>
               </div>
               <div class="selected-file-display" id="selected-file-display" style="display:none">
                 <span class="file-icon">📄</span>
@@ -194,14 +194,14 @@
           <div class="flow-step" id="step-confirm">
             <div class="step-number">3</div>
             <div class="step-content">
-              <h3 class="step-title">Instalar</h3>
+              <h3 class="step-title">Install</h3>
               <div class="install-warning">
                 <span>⚠️</span>
-                <span>Um backup dos arquivos originais será criado automaticamente antes da instalação.</span>
+                <span>A backup of the original files will be automatically created before installation.</span>
               </div>
               <button class="btn btn-primary" id="btn-do-install" disabled>
                 <span class="btn-icon">🚀</span>
-                Instalar Mod
+                Install Mod
               </button>
             </div>
           </div>
@@ -209,7 +209,7 @@
 
         <!-- Progress -->
         <div class="progress-area" id="progress-area" style="display:none">
-          <div class="progress-label" id="progress-label">Instalando...</div>
+          <div class="progress-label" id="progress-label">Installing...</div>
           <div class="progress-bar-track">
             <div class="progress-bar-fill" id="progress-bar"></div>
           </div>
@@ -219,18 +219,18 @@
       <!-- TAB: CONFIGURAÇÕES -->
       <section class="tab-panel" id="tab-settings">
         <div class="panel-header">
-          <h1 class="panel-title">Configurações</h1>
-          <p class="panel-subtitle">Personalize o Mod Manager</p>
+          <h1 class="panel-title">Settings</h1>
+          <p class="panel-subtitle">Customize the Mod Manager</p>
         </div>
 
         <div class="settings-list">
           <div class="settings-group">
-            <h3 class="settings-group-title">Caminho do Jogo</h3>
+            <h3 class="settings-group-title">Game Path</h3>
             <div class="setting-row">
-              <label class="setting-label" for="input-game-path">Diretório do 007: First Light</label>
+              <label class="setting-label" for="input-game-path">007: First Light Directory</label>
               <div class="setting-control path-control">
                 <input type="text" class="setting-input" id="input-game-path" placeholder="C:\Program Files\Steam\steamapps\common\..." readonly />
-                <button class="btn btn-ghost btn-sm" id="btn-choose-path">Alterar</button>
+                <button class="btn btn-ghost btn-sm" id="btn-choose-path">Browse</button>
               </div>
             </div>
           </div>
@@ -238,13 +238,13 @@
           <div class="settings-group">
             <h3 class="settings-group-title">Nexus Mods</h3>
             <div class="setting-row">
-              <label class="setting-label" for="input-nexus-key">API Key (opcional — para verificar atualizações)</label>
+              <label class="setting-label" for="input-nexus-key">API Key (optional — to check for updates)</label>
               <div class="setting-control">
-                <input type="password" class="setting-input" id="input-nexus-key" placeholder="Sua API key do Nexus Mods..." />
+                <input type="password" class="setting-input" id="input-nexus-key" placeholder="Your Nexus Mods API key..." />
               </div>
             </div>
             <div class="setting-row">
-              <label class="setting-label">Verificar atualizações automaticamente</label>
+              <label class="setting-label">Check for updates automatically</label>
               <div class="setting-control">
                 <label class="toggle" id="toggle-auto-update">
                   <input type="checkbox" id="check-auto-update" checked />
@@ -257,7 +257,7 @@
           <div class="settings-group">
             <h3 class="settings-group-title">Backup</h3>
             <div class="setting-row">
-              <label class="setting-label">Backup encontrado</label>
+              <label class="setting-label">Original backup</label>
               <div class="setting-control">
                 <span class="setting-value" id="backup-status-text">—</span>
               </div>
@@ -265,14 +265,14 @@
             <div class="setting-row">
               <label class="setting-label"></label>
               <div class="setting-control">
-                <button class="btn btn-danger btn-sm" id="btn-delete-backup">🗑️ Remover backup</button>
+                <button class="btn btn-danger btn-sm" id="btn-delete-backup">🗑️ Delete backup</button>
               </div>
             </div>
           </div>
 
           <div class="settings-actions">
-            <button class="btn btn-primary" id="btn-save-settings">💾 Salvar configurações</button>
-            <button class="btn btn-ghost" id="btn-check-now">🔄 Verificar atualizações agora</button>
+            <button class="btn btn-primary" id="btn-save-settings">💾 Save Settings</button>
+            <button class="btn btn-ghost" id="btn-check-now">🔄 Check for updates now</button>
           </div>
         </div>
       </section>
@@ -280,7 +280,7 @@
       <!-- TAB: SOBRE -->
       <section class="tab-panel" id="tab-about">
         <div class="panel-header">
-          <h1 class="panel-title">Sobre</h1>
+          <h1 class="panel-title">About</h1>
           <p class="panel-subtitle">Open Source Mod Manager</p>
         </div>
 
@@ -288,11 +288,11 @@
           <div class="about-hero">
             <div class="about-logo">🛠️</div>
             <h2 class="about-title">First Light Mod Manager</h2>
-            <p class="about-version">Versão 0.1.0</p>
+            <p class="about-version">Version 0.1.0</p>
             <p class="about-desc">
-              Gerenciador de mods de código aberto para o <strong>007: First Light</strong>.
-              Instale, atualize e remova arquivos .rpkg de forma simples e segura, sem precisar de
-              conhecimento técnico.
+              Open-source mod manager for <strong>007: First Light</strong>.
+              Safely and easily install, update, and remove .rpkg files without needing
+              technical knowledge.
             </p>
           </div>
 
@@ -307,14 +307,14 @@
             <a href="#" class="about-link-card" id="abt-discord">
               <span class="alc-icon">💬</span>
               <div>
-                <strong>Comunidade Discord</strong>
-                <span>Visite o servidor oficial</span>
+                <strong>Discord Community</strong>
+                <span>Visit the official server</span>
               </div>
             </a>
           </div>
 
           <div class="about-tech">
-            <h3>Tecnologias utilizadas</h3>
+            <h3>Technologies used</h3>
             <div class="tech-chips">
               <span class="tech-chip">Tauri 2</span>
               <span class="tech-chip">Rust</span>
@@ -324,7 +324,7 @@
           </div>
 
           <p class="about-footer">
-            Open Source · 2026 · Licença MIT / Apache 2.0
+            Open Source · 2026 · MIT / Apache 2.0 License
           </p>
         </div>
       </section>

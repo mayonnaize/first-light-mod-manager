@@ -71,16 +71,16 @@ async function detectGame() {
     state.gameFound = info.found;
 
     // Atualiza UI
-    const platformLabels = { steam: '🟦 Steam', epic: '🟪 Epic Games', unknown: '❓ Desconhecido' };
+    const platformLabels = { steam: '🟦 Steam', epic: '🟪 Epic Games', unknown: '❓ Unknown' };
     document.getElementById('platform-tag').textContent = platformLabels[info.platform] || '—';
     document.getElementById('game-path-display').textContent = info.found
       ? info.path
-      : 'Jogo não encontrado. Configure o caminho manualmente.';
+      : 'Game not found. Configure path manually.';
     document.getElementById('sc-platform').textContent = info.platform === 'steam' ? 'Steam' : info.platform === 'epic' ? 'Epic Games' : '—';
-    document.getElementById('sc-game').textContent = info.found ? '✅ Instalado' : '❌ Não encontrado';
+    document.getElementById('sc-game').textContent = info.found ? '✅ Installed' : '❌ Not found';
 
     // Path no install tab
-    document.getElementById('step-game-path-text').textContent = info.found ? info.path : 'Não encontrado — selecione manualmente';
+    document.getElementById('step-game-path-text').textContent = info.found ? info.path : 'Not found — select manually';
     document.getElementById('input-game-path').value = info.path || '';
 
     // Botões
@@ -94,7 +94,7 @@ async function detectGame() {
     }
   } catch (err) {
     console.error('detect_game error:', err);
-    toast('Erro ao detectar o jogo: ' + err, 'error');
+    toast('Error detecting game: ' + err, 'error');
   }
 }
 
@@ -122,19 +122,19 @@ function setModStatusUI(installed, version, backupExists) {
 
   if (installed) {
     chip.className = 'status-chip installed';
-    chip.querySelector('.chip-text').textContent = 'Mod(s) ativo(s)';
+    chip.querySelector('.chip-text').textContent = 'Active Mod(s)';
     verChip.style.display = 'flex';
-    verText.textContent = `Ativo`;
-    scMod.textContent = `Ativo`;
+    verText.textContent = `Active`;
+    scMod.textContent = `Active`;
   } else {
     chip.className = 'status-chip not-installed';
-    chip.querySelector('.chip-text').textContent = 'Nenhum mod ativo';
+    chip.querySelector('.chip-text').textContent = 'No active mods';
     verChip.style.display = 'none';
-    scMod.textContent = 'Nenhum mod';
+    scMod.textContent = 'No mods';
   }
 
-  scBack.textContent = backupExists ? '✅ Disponível' : '—';
-  backupStatusText.textContent = backupExists ? '✅ Backup original criado' : '❌ Nenhum backup';
+  scBack.textContent = backupExists ? '✅ Available' : '—';
+  backupStatusText.textContent = backupExists ? '✅ Backup created' : '❌ No backup';
 
   // Botões de ação
   const btnInstallMain   = document.getElementById('btn-install-main');
@@ -152,18 +152,18 @@ async function installMod() {
   const btn = document.getElementById('btn-do-install');
   btn.disabled = true;
 
-  setProgress('Criando backup dos arquivos originais...', 20);
+  setProgress('Creating backup of original files...', 20);
   await sleep(400);
-  setProgress('Copiando arquivos do mod...', 55);
+  setProgress('Copying mod files...', 55);
   await sleep(300);
-  setProgress('Atualizando packagedefinition.txt...', 80);
+  setProgress('Patching packagedefinition.txt...', 80);
 
   try {
     const result = await invoke('install_mod', {
       gamePath: state.gamePath,
       modPath: state.selectedModFile,
     });
-    setProgress('Concluído!', 100);
+    setProgress('Completed!', 100);
     await sleep(600);
     hideProgress();
     toast(result, 'success');
@@ -172,7 +172,7 @@ async function installMod() {
     document.getElementById('nav-home').click();
   } catch (err) {
     hideProgress();
-    toast('Erro ao instalar: ' + err, 'error');
+    toast('Error installing mod: ' + err, 'error');
     btn.disabled = false;
   }
 }
@@ -181,7 +181,7 @@ async function installMod() {
 async function uninstallMod() {
   if (!state.gamePath) return;
 
-  const confirmed = confirm('Deseja desinstalar todos os mods e restaurar os arquivos originais do jogo?');
+  const confirmed = confirm('Do you want to uninstall all mods and restore original game files?');
   if (!confirmed) return;
 
   const btn = document.getElementById('btn-uninstall-main');
@@ -192,7 +192,7 @@ async function uninstallMod() {
     toast(result, 'success');
     await getModStatus();
   } catch (err) {
-    toast('Erro ao desinstalar: ' + err, 'error');
+    toast('Error uninstalling: ' + err, 'error');
     btn.disabled = false;
   }
 }
@@ -200,7 +200,7 @@ async function uninstallMod() {
 // ─── Verificar atualizações ───────────────────────────────────────────
 async function checkUpdates(showToast = false) {
   if (NEXUS_MOD_ID === '0') {
-    if (showToast) toast('Verificação de atualizações desativada (Mod ID não configurado).', 'info');
+    if (showToast) toast('Updates check disabled (Mod ID not configured).', 'info');
     return;
   }
   try {
@@ -208,13 +208,13 @@ async function checkUpdates(showToast = false) {
     if (result.has_update) {
       const banner = document.getElementById('update-banner');
       banner.style.display = 'flex';
-      document.getElementById('update-version-text').textContent = `Versão ${result.version} disponível no Nexus Mods.`;
+      document.getElementById('update-version-text').textContent = `Version ${result.version} available on Nexus Mods.`;
       document.getElementById('btn-download-update').href = result.url;
     } else if (showToast) {
-      toast('Você já tem a versão mais recente!', 'success');
+      toast('You already have the latest version!', 'success');
     }
   } catch (err) {
-    if (showToast) toast('Não foi possível verificar atualizações: ' + err, 'error');
+    if (showToast) toast('Could not check for updates: ' + err, 'error');
   }
 }
 
@@ -224,14 +224,14 @@ async function browseModFile() {
     const selected = await open({
       multiple: false,
       filters: [
-        { name: 'Arquivos de Mod (.rpkg, .zip)', extensions: ['rpkg', 'zip'] },
+        { name: 'Mod Files (.rpkg, .zip)', extensions: ['rpkg', 'zip'] },
       ],
     });
     if (selected) {
       setModFile(selected);
     }
   } catch (err) {
-    toast('Erro ao selecionar arquivo: ' + err, 'error');
+    toast('Error selecting file: ' + err, 'error');
   }
 }
 
@@ -270,10 +270,10 @@ async function selectGamePath() {
       document.getElementById('input-game-path').value = selected;
       document.getElementById('btn-open-folder').disabled = false;
       await getModStatus();
-      toast('Pasta do jogo configurada!', 'success');
+      toast('Game directory configured!', 'success');
     }
   } catch (err) {
-    toast('Erro ao selecionar pasta: ' + err, 'error');
+    toast('Error selecting directory: ' + err, 'error');
   }
 }
 
@@ -282,7 +282,7 @@ async function openGameFolder() {
   try {
     await invoke('open_game_folder', { gamePath: state.gamePath });
   } catch (err) {
-    toast('Erro: ' + err, 'error');
+    toast('Error: ' + err, 'error');
   }
 }
 
@@ -306,7 +306,7 @@ function setupDropZone() {
     if (file && (file.name.endsWith('.rpkg') || file.name.endsWith('.zip'))) {
       setModFile(file.path || file.name);
     } else {
-      toast('Por favor, selecione um arquivo .rpkg ou .zip', 'error');
+      toast('Please select a .rpkg or .zip file', 'error');
     }
   });
 }
@@ -320,7 +320,7 @@ function saveSettings() {
     document.getElementById('game-path-display').textContent = path;
     document.getElementById('step-game-path-text').textContent = path;
   }
-  toast('Configurações salvas!', 'success');
+  toast('Settings saved!', 'success');
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -349,8 +349,8 @@ function bindEvents() {
   document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
   document.getElementById('btn-check-now').addEventListener('click', () => checkUpdates(true));
   document.getElementById('btn-delete-backup').addEventListener('click', async () => {
-    if (!state.backupExists) { toast('Nenhum backup para remover.', 'info'); return; }
-    toast('Funcionalidade em desenvolvimento.', 'info');
+    if (!state.backupExists) { toast('No backup to remove.', 'info'); return; }
+    toast('Feature in development.', 'info');
   });
 
   // Update banner
