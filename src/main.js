@@ -227,6 +227,9 @@ let state = {
 
 // ─── Utilitários de Tradução ──────────────────────────────────────────
 function applyLanguage(lang) {
+  if (lang !== 'en' && lang !== 'pt') {
+    lang = 'en';
+  }
   state.language = lang;
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
@@ -748,8 +751,12 @@ async function init() {
   setupDropZone();
   
   // Load persisted settings
-  state.language = localStorage.getItem('language') || 'en';
-  applyLanguage(state.language);
+  let savedLang = localStorage.getItem('language') || 'en';
+  if (savedLang !== 'en' && savedLang !== 'pt') {
+    savedLang = 'en';
+  }
+  state.language = savedLang;
+  applyLanguage(savedLang);
   
   const savedPath = localStorage.getItem('gamePath');
   if (savedPath) {

@@ -341,7 +341,10 @@ pub async fn check_updates(current_version: String, mod_id: String, api_key: Opt
     }
 
     let url = format!("https://api.nexusmods.com/v1/games/007firstlight/mods/{}.json", mod_id);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
 
     let mut builder = client
         .get(&url)
