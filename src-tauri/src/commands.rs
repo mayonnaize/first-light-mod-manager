@@ -25,6 +25,138 @@ pub struct NexusRelease {
     pub has_update: bool,
 }
 
+// ─── XTEA Decryption and Encryption for packagedefinition.txt ──────────────
+
+const XTEA_KEYS: [u32; 4] = [0x30F95282, 0x1F48C419, 0x295F8548, 0x2A78366D];
+const XTEA_DELTA: u32 = 0x61C88647;
+const XTEA_SUM: u32 = 0xC6EF3720;
+const XTEA_HEADER: [u8; 16] = [
+    0x22, 0x3D, 0x6F, 0x9A, 0xB3, 0xF8, 0xFE, 0xB6,
+    0x61, 0xD9, 0xCC, 0x1C, 0x62, 0xDE, 0x83, 0x41,
+];
+
+fn decrypt_block_xtea(a: &mut u32, b: &mut u32, keys: &[u32; 4]) {
+    let mut sum: u32 = XTEA_SUM;
+    for _ in 0..32 {
+        *b = b.wrapping_sub(
+            ((*a << 4) ^ (*a >> 5)).wrapping_add(*a)
+                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize])
+        );
+        sum = sum.wrapping_add(XTEA_DELTA);
+        *a = a.wrapping_sub(
+            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b)
+                ^ sum.wrapping_add(keys[(sum & 3) as usize])
+        );
+    }
+}
+
+fn encrypt_block_xtea(a: &mut u32, b: &mut u32, keys: &[u32; 4]) {
+    let mut sum: u32 = 0;
+    for _ in 0..32 {
+        *a = a.wrapping_add(
+            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b)
+                ^ sum.wrapping_add(keys[(sum & 3) as usize])
+        );
+        sum = sum.wrapping_sub(XTEA_DELTA);
+        *b = b.wrapping_add(
+            ((*a << 4) ^ (*a >> 5)).wrapping_add(*a)
+                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize])
+        );
+    }
+}
+
+fn decrypt_buffer(data: &[u8]) -> Vec<u8> {
+    let mut decrypted = Vec::with_capacity(data.len());
+    let block_count = data.len() / 8;
+    for i in 0..block_count {
+        let offset = i * 8;
+        if offset + 8 <= data.len() {
+            let mut a = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]);
+            let mut b = u32::from_le_bytes([data[offset+4], data[offset+5], data[offset+6], data[offset+7]]);
+            decrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+            decrypted.extend_from_slice(&a.to_le_bytes());
+            decrypted.extend_from_slice(&b.to_le_bytes());
+        }
+    }
+    while decrypted.last() == Some(&0) {
+        decrypted.pop();
+    }
+    decrypted
+}
+
+fn encrypt_buffer(data: &[u8]) -> Vec<u8> {
+    let mut padded = data.to_vec();
+    while padded.len() % 8 != 0 {
+        padded.push(0);
+    }
+    let mut encrypted = Vec::with_capacity(padded.len());
+    let block_count = padded.len() / 8;
+    for i in 0..block_count {
+        let offset = i * 8;
+        let mut a = u32::from_le_bytes([padded[offset], padded[offset+1], padded[offset+2], padded[offset+3]]);
+        let mut b = u32::from_le_bytes([padded[offset+4], padded[offset+5], padded[offset+6], padded[offset+7]]);
+        encrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        encrypted.extend_from_slice(&a.to_le_bytes());
+        encrypted.extend_from_slice(&b.to_le_bytes());
+    }
+    encrypted
+}
+
+fn crc32_ieee(data: &[u8]) -> u32 {
+    let mut crc = 0xFFFFFFFFu32;
+    for &byte in data {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            if crc & 1 != 0 {
+                crc = (crc >> 1) ^ 0xEDB88320;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    !crc
+}
+
+fn read_packagedefinition(runtime: &Path) -> Result<String, String> {
+    let pkg_def = runtime.join("packagedefinition.txt");
+    if !pkg_def.exists() {
+        return Ok(String::new());
+    }
+
+    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
+    if data.len() >= 20 && data[0..16] == XTEA_HEADER {
+        let decrypted_bytes = decrypt_buffer(&data[20..]);
+        let content = String::from_utf8(decrypted_bytes)
+            .map_err(|_| "Decrypted packagedefinition.txt is not valid UTF-8".to_string())?;
+        Ok(content)
+    } else {
+        let content = String::from_utf8(data)
+            .map_err(|_| "packagedefinition.txt is not valid UTF-8".to_string())?;
+        Ok(content)
+    }
+}
+
+fn write_packagedefinition(runtime: &Path, content: &str, was_encrypted: bool) -> Result<(), String> {
+    let pkg_def = runtime.join("packagedefinition.txt");
+    let content_bytes = content.as_bytes();
+    
+    if was_encrypted {
+        let encrypted_bytes = encrypt_buffer(content_bytes);
+        let crc = crc32_ieee(content_bytes);
+        
+        let mut file_data = Vec::with_capacity(16 + 4 + encrypted_bytes.len());
+        file_data.extend_from_slice(&XTEA_HEADER);
+        file_data.extend_from_slice(&crc.to_le_bytes());
+        file_data.extend_from_slice(&encrypted_bytes);
+        
+        fs::write(&pkg_def, &file_data).map_err(|e| e.to_string())?;
+    } else {
+        fs::write(&pkg_def, content_bytes).map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+
 // ─── detect_game ──────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -231,19 +363,28 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 fn update_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), String> {
     let pkg_def = runtime.join("packagedefinition.txt");
-    let mut content = if pkg_def.exists() {
-        fs::read_to_string(&pkg_def).map_err(|e| e.to_string())?
+    if !pkg_def.exists() {
+        return Ok(());
+    }
+
+    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
+    let (content, was_encrypted) = if data.len() >= 20 && data[0..16] == XTEA_HEADER {
+        let decrypted = decrypt_buffer(&data[20..]);
+        let s = String::from_utf8(decrypted).map_err(|_| "Decrypted packagedefinition is not UTF-8".to_string())?;
+        (s, true)
     } else {
-        String::new()
+        let s = String::from_utf8(data).map_err(|_| "packagedefinition is not UTF-8".to_string())?;
+        (s, false)
     };
 
     let chunk = rpkg_name.trim_end_matches(".rpkg");
     let entry = format!("@include {}", chunk);
     if !content.contains(&entry) {
-        if !content.is_empty() && !content.ends_with('\n') { content.push('\n'); }
-        content.push_str(&entry);
-        content.push('\n');
-        fs::write(&pkg_def, &content).map_err(|e| e.to_string())?;
+        let mut new_content = content;
+        if !new_content.is_empty() && !new_content.ends_with('\n') { new_content.push('\n'); }
+        new_content.push_str(&entry);
+        new_content.push('\n');
+        write_packagedefinition(runtime, &new_content, was_encrypted)?;
     }
     Ok(())
 }
@@ -409,7 +550,16 @@ pub struct ModInfo {
 fn remove_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), String> {
     let pkg_def = runtime.join("packagedefinition.txt");
     if !pkg_def.exists() { return Ok(()); }
-    let content = fs::read_to_string(&pkg_def).map_err(|e| e.to_string())?;
+    
+    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
+    let (content, was_encrypted) = if data.len() >= 20 && data[0..16] == XTEA_HEADER {
+        let decrypted = decrypt_buffer(&data[20..]);
+        let s = String::from_utf8(decrypted).map_err(|_| "Decrypted packagedefinition is not UTF-8".to_string())?;
+        (s, true)
+    } else {
+        let s = String::from_utf8(data).map_err(|_| "packagedefinition is not UTF-8".to_string())?;
+        (s, false)
+    };
 
     let chunk = rpkg_name.trim_end_matches(".rpkg");
     let entry = format!("@include {}", chunk);
@@ -422,7 +572,7 @@ fn remove_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), Stri
     if !new_content.is_empty() {
         new_content.push('\n');
     }
-    fs::write(&pkg_def, &new_content).map_err(|e| e.to_string())?;
+    write_packagedefinition(runtime, &new_content, was_encrypted)?;
     Ok(())
 }
 
@@ -441,7 +591,7 @@ pub async fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
 
     let pkg_def = runtime.join("packagedefinition.txt");
     let includes_content = if pkg_def.exists() {
-        fs::read_to_string(&pkg_def).unwrap_or_default()
+        read_packagedefinition(&runtime).unwrap_or_default()
     } else {
         String::new()
     };
