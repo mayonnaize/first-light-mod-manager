@@ -570,7 +570,7 @@ function setupDropZone() {
 }
 
 // ─── Salvar configurações ─────────────────────────────────────────────
-function saveSettings() {
+async function saveSettings() {
   const path = document.getElementById('input-game-path').value.trim();
   const apiKey = document.getElementById('input-nexus-key').value.trim();
   const modId = document.getElementById('input-mod-id').value.trim() || '0';
