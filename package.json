@@ -4,9 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "test": "npm run test:rust && npm run test:e2e",
+    "test:rust": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:PATH=($env:USERPROFILE + '/.cargo/bin;' + $env:PATH); cargo test --manifest-path src-tauri/Cargo.toml\"",
+    "test:e2e": "playwright test",
+    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2"
   }
 }

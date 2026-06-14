@@ -108,6 +108,18 @@ const translations = {
     mod_status_active: "Active",
     mod_status_inactive: "Inactive",
     author_by: "by",
+    manual_label: "Manual",
+    preview_title: "Package contents",
+    preview_summary: "Install plan",
+    preview_no_rpkg: "No valid .rpkg files found in this package.",
+    preview_target: "Target",
+    preview_original: "Source",
+    preview_warnings: "Warnings",
+    preview_metadata: "Metadata detected",
+    preview_no_metadata: "No metadata",
+    preview_inspecting: "Inspecting package...",
+    preview_inspect_failed: "Could not inspect package: ",
+    toast_backup_deleted: "Backup deleted.",
     steam_label: "🟦 Steam",
     epic_label: "🟪 Epic Games",
     unknown_label: "❓ Unknown"
@@ -207,6 +219,18 @@ const translations = {
     mod_status_active: "Ativo",
     mod_status_inactive: "Inativo",
     author_by: "por",
+    manual_label: "Manual",
+    preview_title: "Conteúdo do pacote",
+    preview_summary: "Plano de instalação",
+    preview_no_rpkg: "Nenhum arquivo .rpkg válido encontrado neste pacote.",
+    preview_target: "Destino",
+    preview_original: "Origem",
+    preview_warnings: "Avisos",
+    preview_metadata: "Metadados detectados",
+    preview_no_metadata: "Sem metadados",
+    preview_inspecting: "Inspecionando pacote...",
+    preview_inspect_failed: "Não foi possível inspecionar o pacote: ",
+    toast_backup_deleted: "Backup removido.",
     steam_label: "🟦 Steam",
     epic_label: "🟪 Epic Games",
     unknown_label: "❓ Desconhecido"
@@ -222,6 +246,14 @@ let state = {
   modVersion: '',
   backupExists: false,
   selectedModFile: '',
+  modPreview: null,
+  settings: {
+    game_path: '',
+    language: 'en',
+    nexus_api_key: '',
+    nexus_mod_id: '0',
+    auto_check_updates: true
+  },
   language: 'en' // Default language
 };
 
@@ -253,6 +285,7 @@ function applyLanguage(lang) {
   if (select) {
     select.value = lang;
   }
+  renderModPreview(state.modPreview);
   renderModList().catch(() => {});
 }
 
@@ -289,6 +322,189 @@ function hideProgress() {
   document.getElementById('progress-bar').style.width = '0%';
 }
 
+function normalizeSettings(settings = {}) {
+  return {
+    game_path: settings.game_path || settings.gamePath || localStorage.getItem('gamePath') || '',
+    language: settings.language === 'pt' ? 'pt' : 'en',
+    nexus_api_key: settings.nexus_api_key || settings.nexusApiKey || localStorage.getItem('nexusApiKey') || '',
+    nexus_mod_id: settings.nexus_mod_id || settings.nexusModId || localStorage.getItem('nexusModId') || '0',
+    auto_check_updates: typeof settings.auto_check_updates === 'boolean'
+      ? settings.auto_check_updates
+      : localStorage.getItem('autoCheckUpdates') !== 'false'
+  };
+}
+
+function currentSettingsFromInputs() {
+  return normalizeSettings({
+    ...state.settings,
+    game_path: document.getElementById('input-game-path').value.trim(),
+    language: document.getElementById('select-language').value,
+    nexus_api_key: document.getElementById('input-nexus-key').value.trim(),
+    nexus_mod_id: document.getElementById('input-mod-id').value.trim() || '0',
+    auto_check_updates: document.getElementById('check-auto-update').checked
+  });
+}
+
+function applySettings(settings) {
+  const normalized = normalizeSettings(settings);
+  state.settings = normalized;
+  state.language = normalized.language;
+
+  document.getElementById('input-game-path').value = normalized.game_path;
+  document.getElementById('input-nexus-key').value = normalized.nexus_api_key;
+  document.getElementById('input-mod-id').value = normalized.nexus_mod_id;
+  document.getElementById('check-auto-update').checked = normalized.auto_check_updates;
+  document.getElementById('select-language').value = normalized.language;
+
+  localStorage.setItem('language', normalized.language);
+  localStorage.setItem('gamePath', normalized.game_path);
+  localStorage.setItem('nexusApiKey', normalized.nexus_api_key);
+  localStorage.setItem('nexusModId', normalized.nexus_mod_id);
+  localStorage.setItem('autoCheckUpdates', normalized.auto_check_updates.toString());
+}
+
+async function persistSettings(overrides = {}) {
+  const next = normalizeSettings({ ...currentSettingsFromInputs(), ...overrides });
+  const saved = await invoke('save_settings', { settings: next });
+  applySettings(saved);
+  return state.settings;
+}
+
+function platformLabel(platform) {
+  const lang = state.language;
+  const labels = {
+    steam: translations[lang].steam_label,
+    epic: translations[lang].epic_label,
+    manual: translations[lang].manual_label,
+    unknown: translations[lang].unknown_label
+  };
+  return labels[platform] || '—';
+}
+
+function applyGameInfo(info) {
+  state.gamePath = info.path || '';
+  state.platform = info.platform || 'unknown';
+  state.gameFound = Boolean(info.found);
+
+  const lang = state.language;
+  const gamePathDisplay = document.getElementById('game-path-display');
+  gamePathDisplay.textContent = state.gameFound ? state.gamePath : translations[lang].game_not_found_manual;
+  gamePathDisplay.style.color = state.gameFound ? '' : 'var(--danger)';
+
+  document.getElementById('platform-tag').textContent = platformLabel(state.platform);
+  document.getElementById('sc-platform').textContent = state.gameFound ? platformLabel(state.platform).replace(/^[^\w]+ /, '') : '—';
+  document.getElementById('sc-game').textContent = state.gameFound ? translations[lang].game_installed : translations[lang].game_not_found;
+  document.getElementById('step-game-path-text').textContent = state.gameFound ? state.gamePath : translations[lang].scanning_not_found;
+  document.getElementById('input-game-path').value = state.gamePath;
+  document.getElementById('btn-open-folder').disabled = !state.gameFound;
+  updateInstallButtonState();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function renderModPreview(preview) {
+  const box = document.getElementById('mod-preview');
+  const type = document.getElementById('mod-preview-type');
+  const summary = document.getElementById('mod-preview-summary');
+  const list = document.getElementById('mod-preview-list');
+  const warnings = document.getElementById('mod-preview-warnings');
+  if (!box || !type || !summary || !list || !warnings) return;
+
+  if (!preview) {
+    box.style.display = 'none';
+    type.textContent = '';
+    summary.textContent = '';
+    list.innerHTML = '';
+    warnings.innerHTML = '';
+    return;
+  }
+
+  const lang = state.language;
+  const rpkgFiles = preview.rpkg_files || [];
+  box.style.display = 'block';
+  type.textContent = (preview.package_type || '').toUpperCase();
+  summary.textContent = `${translations[lang].preview_summary}: ${rpkgFiles.length} .rpkg · ${preview.has_metadata ? translations[lang].preview_metadata : translations[lang].preview_no_metadata}`;
+
+  list.innerHTML = rpkgFiles.length
+    ? rpkgFiles.map(item => `
+        <div class="mod-preview-row">
+          <div class="mod-preview-file">
+            <span class="mod-preview-label">${translations[lang].preview_target}</span>
+            <span class="mod-preview-name">${escapeHtml(item.target_name)}</span>
+          </div>
+          <div class="mod-preview-meta">
+            <span>${translations[lang].preview_original}: ${escapeHtml(item.original_name)}</span>
+            <span>chunk${item.chunk} patch${item.target_patch}</span>
+            <span>${formatBytes(item.size)}</span>
+          </div>
+        </div>
+      `).join('')
+    : `<div class="mod-preview-empty">${translations[lang].preview_no_rpkg}</div>`;
+
+  warnings.innerHTML = (preview.warnings || []).length
+    ? `
+      <div class="mod-preview-warning-title">${translations[lang].preview_warnings}</div>
+      ${(preview.warnings || []).map(item => `<div class="mod-preview-warning">${escapeHtml(item)}</div>`).join('')}
+    `
+    : '';
+}
+
+async function inspectSelectedMod() {
+  if (!state.selectedModFile) {
+    state.modPreview = null;
+    renderModPreview(null);
+    return;
+  }
+
+  const lang = state.language;
+  state.modPreview = {
+    file_name: state.selectedModFile.split(/[\\/]/).pop(),
+    package_type: state.selectedModFile.split('.').pop() || '',
+    installable: false,
+    rpkg_files: [],
+    has_packagedefinition: false,
+    has_metadata: false,
+    warnings: [translations[lang].preview_inspecting]
+  };
+  renderModPreview(state.modPreview);
+  updateInstallButtonState();
+
+  try {
+    state.modPreview = await invoke('inspect_mod', {
+      modPath: state.selectedModFile,
+      gamePath: state.gamePath || null
+    });
+  } catch (err) {
+    state.modPreview = {
+      ...state.modPreview,
+      warnings: [translations[lang].preview_inspect_failed + err]
+    };
+    toast(translations[lang].preview_inspect_failed + err, 'error');
+  }
+
+  renderModPreview(state.modPreview);
+  updateInstallButtonState();
+}
+
 // ─── Navegação por abas ───────────────────────────────────────────────
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -303,34 +519,18 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 async function detectGame() {
   try {
     const info = await invoke('detect_game');
-    state.gamePath  = info.path;
-    state.platform  = info.platform;
-    state.gameFound = info.found;
-
-    // Atualiza UI
-    const lang = state.language;
-    const platformLabels = { steam: '🟦 Steam', epic: '🟪 Epic Games', unknown: translations[lang].unknown_label };
-    document.getElementById('platform-tag').textContent = platformLabels[info.platform] || '—';
-    document.getElementById('game-path-display').textContent = info.found
-      ? info.path
-      : translations[lang].game_not_found_manual;
-    document.getElementById('sc-platform').textContent = info.platform === 'steam' ? 'Steam' : info.platform === 'epic' ? 'Epic Games' : '—';
-    document.getElementById('sc-game').textContent = info.found ? translations[lang].game_installed : translations[lang].game_not_found;
-
-    // Path no install tab
-    document.getElementById('step-game-path-text').textContent = info.found ? info.path : translations[lang].scanning_not_found;
-    document.getElementById('input-game-path').value = info.path || '';
-
-    // Botões
-    document.getElementById('btn-open-folder').disabled = !info.found;
+    applyGameInfo(info);
 
     if (info.found) {
+      state.settings.game_path = info.path;
       await getModStatus();
     } else {
-      document.getElementById('game-path-display').style.color = 'var(--danger)';
       setModStatusUI(false, '', false);
     }
     await renderModList();
+    if (state.selectedModFile) {
+      await inspectSelectedMod();
+    }
   } catch (err) {
     console.error('detect_game error:', err);
     toast(translations[state.language].err_detecting + err, 'error');
@@ -445,8 +645,9 @@ async function uninstallMod() {
 // ─── Verificar atualizações ───────────────────────────────────────────
 async function checkUpdates(showToast = false) {
   const lang = state.language;
-  const modId = localStorage.getItem('nexusModId') || '0';
-  const apiKey = localStorage.getItem('nexusApiKey') || '';
+  const settings = normalizeSettings({ ...state.settings, ...currentSettingsFromInputs() });
+  const modId = settings.nexus_mod_id || '0';
+  const apiKey = settings.nexus_api_key || '';
 
   if (modId === '0' || !modId) {
     if (showToast) toast(translations[lang].updates_disabled, 'info');
@@ -484,14 +685,14 @@ async function browseModFile() {
       ],
     });
     if (selected) {
-      setModFile(selected);
+      await setModFile(selected);
     }
   } catch (err) {
     toast(translations[state.language].err_select_file + err, 'error');
   }
 }
 
-function setModFile(filePath) {
+async function setModFile(filePath) {
   state.selectedModFile = filePath;
   const name = filePath.split(/[\\/]/).pop();
 
@@ -499,19 +700,22 @@ function setModFile(filePath) {
   const display = document.getElementById('selected-file-display');
   display.style.display = 'flex';
   document.getElementById('selected-file-name').textContent = name;
+  await inspectSelectedMod();
   updateInstallButtonState();
 }
 
 function clearModFile() {
   state.selectedModFile = '';
+  state.modPreview = null;
   document.getElementById('drop-zone').style.display = 'block';
   document.getElementById('selected-file-display').style.display = 'none';
+  renderModPreview(null);
   updateInstallButtonState();
 }
 
 function updateInstallButtonState() {
   const btn = document.getElementById('btn-do-install');
-  btn.disabled = !state.gamePath || !state.selectedModFile;
+  btn.disabled = !state.gamePath || !state.selectedModFile || !state.modPreview?.installable;
 }
 
 // ─── Selecionar pasta do jogo manualmente ────────────────────────────
@@ -519,15 +723,13 @@ async function selectGamePath() {
   try {
     const selected = await open({ directory: true, multiple: false });
     if (selected) {
-      state.gamePath  = selected;
-      state.gameFound = true;
-      document.getElementById('game-path-display').textContent = selected;
-      document.getElementById('step-game-path-text').textContent = selected;
-      document.getElementById('input-game-path').value = selected;
-      document.getElementById('btn-open-folder').disabled = false;
-      localStorage.setItem('gamePath', selected);
+      const saved = await persistSettings({ game_path: selected });
+      applyGameInfo({ found: true, path: saved.game_path, platform: 'manual' });
       await getModStatus();
       await renderModList();
+      if (state.selectedModFile) {
+        await inspectSelectedMod();
+      }
       toast(translations[state.language].toast_game_dir_configured, 'success');
     }
   } catch (err) {
@@ -558,11 +760,11 @@ function setupDropZone() {
   const zone = document.getElementById('drop-zone');
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
+  zone.addEventListener('drop', async e => {
     e.preventDefault(); zone.classList.remove('drag-over');
     const file = e.dataTransfer.files[0];
     if (file && (file.name.endsWith('.rpkg') || file.name.endsWith('.zip'))) {
-      setModFile(file.path || file.name);
+      await setModFile(file.path || file.name);
     } else {
       toast(translations[state.language].drop_error_ext, 'error');
     }
@@ -571,32 +773,25 @@ function setupDropZone() {
 
 // ─── Salvar configurações ─────────────────────────────────────────────
 async function saveSettings() {
-  const path = document.getElementById('input-game-path').value.trim();
-  const apiKey = document.getElementById('input-nexus-key').value.trim();
-  const modId = document.getElementById('input-mod-id').value.trim() || '0';
-  const autoUpdate = document.getElementById('check-auto-update').checked;
+  try {
+    const saved = await persistSettings();
+    if (saved.game_path) {
+      applyGameInfo({ found: true, path: saved.game_path, platform: 'manual' });
+    }
 
-  if (path) {
-    state.gamePath  = path;
-    state.gameFound = true;
-    document.getElementById('game-path-display').textContent = path;
-    document.getElementById('step-game-path-text').textContent = path;
-    localStorage.setItem('gamePath', path);
-  }
-  
-  localStorage.setItem('nexusApiKey', apiKey);
-  localStorage.setItem('nexusModId', modId);
-  localStorage.setItem('autoCheckUpdates', autoUpdate.toString());
-
-  toast(translations[state.language].toast_settings_saved, 'success');
-
-  // Recheck status and updates
-  await getModStatus();
-  await renderModList();
-  if (autoUpdate) {
-    checkUpdates(false).catch(() => {});
-  } else {
-    document.getElementById('update-banner').style.display = 'none';
+    toast(translations[state.language].toast_settings_saved, 'success');
+    await getModStatus();
+    await renderModList();
+    if (state.selectedModFile) {
+      await inspectSelectedMod();
+    }
+    if (saved.auto_check_updates) {
+      checkUpdates(false).catch(() => {});
+    } else {
+      document.getElementById('update-banner').style.display = 'none';
+    }
+  } catch (err) {
+    toast(translations[state.language].err_select_dir + err, 'error');
   }
 }
 
@@ -629,10 +824,14 @@ async function renderModList() {
       const card = document.createElement('div');
       card.className = 'mod-card';
 
-      const titleText = m.name;
-      const verBadge  = m.version ? `<span class="mod-card-version">v${m.version}</span>` : '';
-      const authorText = m.author ? `<span class="mod-card-author">${translations[state.language].author_by} ${m.author}</span>` : '';
-      const descText = m.description || m.filename;
+      const titleText = escapeHtml(m.name);
+      const verBadge  = m.version ? `<span class="mod-card-version">v${escapeHtml(m.version)}</span>` : '';
+      const authorText = m.author ? `<span class="mod-card-author">${translations[state.language].author_by} ${escapeHtml(m.author)}</span>` : '';
+      const descText = escapeHtml(m.description || m.filename);
+      const fileText = m.original_filename && m.original_filename !== m.filename
+        ? `${escapeHtml(m.original_filename)} → ${escapeHtml(m.filename)}`
+        : escapeHtml(m.filename);
+      const patchText = `chunk${m.chunk} patch${m.patch}`;
 
       card.innerHTML = `
         <div class="mod-card-info">
@@ -642,6 +841,7 @@ async function renderModList() {
             ${authorText}
           </div>
           <div class="mod-card-desc">${descText}</div>
+          <div class="mod-card-file">${fileText} · ${patchText}</div>
         </div>
         <div class="mod-card-controls">
           <label class="toggle">
@@ -705,7 +905,10 @@ function bindEvents() {
   document.getElementById('btn-open-folder').addEventListener('click', openGameFolder);
 
   // Install tab
-  document.getElementById('btn-browse-mod').addEventListener('click', browseModFile);
+  document.getElementById('btn-browse-mod').addEventListener('click', (e) => {
+    e.stopPropagation();
+    browseModFile();
+  });
   document.getElementById('drop-zone').addEventListener('click', browseModFile);
   document.getElementById('btn-clear-file').addEventListener('click', clearModFile);
   document.getElementById('btn-do-install').addEventListener('click', installMod);
@@ -717,7 +920,13 @@ function bindEvents() {
   document.getElementById('btn-check-now').addEventListener('click', () => checkUpdates(true));
   document.getElementById('btn-delete-backup').addEventListener('click', async () => {
     if (!state.backupExists) { toast(translations[state.language].toast_no_backup, 'info'); return; }
-    toast(translations[state.language].toast_dev_feature, 'info');
+    try {
+      await invoke('delete_backup', { gamePath: state.gamePath });
+      toast(translations[state.language].toast_backup_deleted, 'success');
+      await getModStatus();
+    } catch (err) {
+      toast(err, 'error');
+    }
   });
 
   // Language Selection Listener
@@ -725,7 +934,8 @@ function bindEvents() {
   if (selectLang) {
     selectLang.addEventListener('change', (e) => {
       const selectedLang = e.target.value;
-      localStorage.setItem('language', selectedLang);
+      state.settings.language = selectedLang;
+      persistSettings({ language: selectedLang }).catch(err => toast(err, 'error'));
       applyLanguage(selectedLang);
       getModStatus();
       detectGame();
@@ -749,39 +959,26 @@ function bindEvents() {
 async function init() {
   bindEvents();
   setupDropZone();
-  
-  // Load persisted settings
-  let savedLang = localStorage.getItem('language') || 'en';
-  if (savedLang !== 'en' && savedLang !== 'pt') {
-    savedLang = 'en';
-  }
-  state.language = savedLang;
-  applyLanguage(savedLang);
-  
-  const savedPath = localStorage.getItem('gamePath');
-  if (savedPath) {
-    state.gamePath = savedPath;
-    state.gameFound = true;
-    document.getElementById('game-path-display').textContent = savedPath;
-    document.getElementById('step-game-path-text').textContent = savedPath;
-    document.getElementById('input-game-path').value = savedPath;
-    document.getElementById('btn-open-folder').disabled = false;
-    await getModStatus();
-    await renderModList();
-  } else {
-    await detectGame();
+
+  try {
+    const loaded = await invoke('load_settings');
+    applySettings(loaded);
+  } catch (err) {
+    console.warn('load_settings error:', err);
+    applySettings(normalizeSettings());
   }
 
-  // Load Nexus settings
-  const savedApiKey = localStorage.getItem('nexusApiKey') || '';
-  const savedModId = localStorage.getItem('nexusModId') || '0';
-  const savedAutoUpdate = localStorage.getItem('autoCheckUpdates') !== 'false';
-  
-  document.getElementById('input-nexus-key').value = savedApiKey;
-  document.getElementById('input-mod-id').value = savedModId;
-  document.getElementById('check-auto-update').checked = savedAutoUpdate;
+  applyLanguage(state.settings.language);
+  if (state.settings.game_path) {
+    try {
+      await persistSettings({ game_path: state.settings.game_path });
+    } catch (err) {
+      console.warn('settings migration skipped:', err);
+    }
+  }
+  await detectGame();
 
-  if (savedAutoUpdate) {
+  if (state.settings.auto_check_updates) {
     checkUpdates(false).catch(() => {});
   }
 }

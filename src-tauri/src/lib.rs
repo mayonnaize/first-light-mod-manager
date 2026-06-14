@@ -7,9 +7,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::detect_game,
+            commands::load_settings,
+            commands::save_settings,
             commands::get_mod_status,
+            commands::inspect_mod,
             commands::install_mod,
             commands::uninstall_mod,
+            commands::delete_backup,
             commands::check_updates,
             commands::open_game_folder,
             commands::list_mods,

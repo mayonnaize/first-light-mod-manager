@@ -1,8 +1,18 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-// ─── Estruturas de dados ───────────────────────────────────────────────────
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct AppSettings {
+    pub game_path: String,
+    pub language: String,
+    pub nexus_api_key: String,
+    pub nexus_mod_id: String,
+    pub auto_check_updates: bool,
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GameInfo {
@@ -25,27 +35,201 @@ pub struct NexusRelease {
     pub has_update: bool,
 }
 
-// ─── XTEA Decryption and Encryption for packagedefinition.txt ──────────────
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ModInfo {
+    pub id: String,
+    pub filename: String,
+    pub original_filename: String,
+    pub name: String,
+    pub author: String,
+    pub description: String,
+    pub version: String,
+    pub active: bool,
+    pub chunk: u32,
+    pub patch: u32,
+}
 
-const XTEA_KEYS: [u32; 4] = [0x30F95282, 0x1F48C419, 0x295F8548, 0x2A78366D];
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ModPreview {
+    pub file_name: String,
+    pub package_type: String,
+    pub installable: bool,
+    pub rpkg_files: Vec<PreviewRpkg>,
+    pub has_packagedefinition: bool,
+    pub has_metadata: bool,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PreviewRpkg {
+    pub original_name: String,
+    pub target_name: String,
+    pub chunk: u32,
+    pub requested_patch: u32,
+    pub target_patch: u32,
+    pub size: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct StoredModMetadata {
+    name: String,
+    author: String,
+    description: String,
+    version: String,
+    original_filename: String,
+    installed_filename: String,
+    source_package: String,
+    installed_at: String,
+}
+
+#[derive(Clone)]
+struct PendingRpkg {
+    original_name: String,
+    data: Vec<u8>,
+    size: u64,
+    chunk: u32,
+    requested_patch: u32,
+}
+
+#[derive(Clone)]
+struct AssignedRpkg {
+    pending: PendingRpkg,
+    target_name: String,
+    target_patch: u32,
+}
+
+struct PackageDefinition {
+    content: String,
+    encrypted: bool,
+}
+
+const XTEA_KEYS: [u32; 4] = [0x71482CF0, 0x5FDC4B9F, 0x86CE569D, 0x0509FC1E];
 const XTEA_DELTA: u32 = 0x61C88647;
 const XTEA_SUM: u32 = 0xC6EF3720;
+// 007 First Light の packagedefinition.txt 先頭16バイト (暗号化識別ヘッダー)
 const XTEA_HEADER: [u8; 16] = [
-    0x22, 0x3D, 0x6F, 0x9A, 0xB3, 0xF8, 0xFE, 0xB6,
-    0x61, 0xD9, 0xCC, 0x1C, 0x62, 0xDE, 0x83, 0x41,
+    0xB7, 0xE2, 0xEA, 0x00, 0x54, 0x5B, 0x6B, 0x87, 0x11, 0xBD, 0x6F, 0xE8, 0x4D, 0x6A, 0xD4, 0xBF,
 ];
+// MODパッチ番号の開始値 (公式パッチと衝突しないよう大きく離す)
+const MOD_PATCH_START: u32 = 100;
+
+fn default_settings() -> AppSettings {
+    AppSettings {
+        language: "en".to_string(),
+        nexus_mod_id: "0".to_string(),
+        auto_check_updates: true,
+        ..AppSettings::default()
+    }
+}
+
+fn app_config_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let base =
+            std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is not available".to_string())?;
+        let dir = PathBuf::from(base).join("First Light Mod Manager");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let base = std::env::var_os("HOME").ok_or_else(|| "HOME is not available".to_string())?;
+        let dir = PathBuf::from(base)
+            .join(".config")
+            .join("first-light-mod-manager");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir)
+    }
+}
+
+fn settings_path() -> Result<PathBuf, String> {
+    Ok(app_config_dir()?.join("settings.json"))
+}
+
+fn read_settings_file() -> AppSettings {
+    let Ok(path) = settings_path() else {
+        return default_settings();
+    };
+    let Ok(content) = fs::read_to_string(path) else {
+        return default_settings();
+    };
+    let mut settings =
+        serde_json::from_str::<AppSettings>(&content).unwrap_or_else(|_| default_settings());
+    if settings.language != "en" && settings.language != "pt" {
+        settings.language = "en".to_string();
+    }
+    if settings.nexus_mod_id.trim().is_empty() {
+        settings.nexus_mod_id = "0".to_string();
+    }
+    settings
+}
+
+fn write_settings_file(settings: &AppSettings) -> Result<(), String> {
+    let path = settings_path()?;
+    let data = serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?;
+    fs::write(path, data).map_err(|e| e.to_string())
+}
+
+fn normalize_game_path(input: &str) -> Result<PathBuf, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Game path is empty".to_string());
+    }
+
+    let mut path = PathBuf::from(trimmed);
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.eq_ignore_ascii_case("Runtime"))
+        .unwrap_or(false)
+    {
+        path = path
+            .parent()
+            .ok_or_else(|| "Runtime folder has no parent game directory".to_string())?
+            .to_path_buf();
+    }
+
+    let runtime = path.join("Runtime");
+    let exe = path.join("Retail").join("007FirstLight.exe");
+    if runtime.is_dir() && (runtime.join("chunk0.rpkg").is_file() || exe.is_file()) {
+        return Ok(path);
+    }
+
+    Err("Selected folder is not a 007 First Light installation".to_string())
+}
+
+#[tauri::command]
+pub async fn load_settings() -> Result<AppSettings, String> {
+    Ok(read_settings_file())
+}
+
+#[tauri::command]
+pub async fn save_settings(mut settings: AppSettings) -> Result<AppSettings, String> {
+    if !settings.game_path.trim().is_empty() {
+        settings.game_path = normalize_game_path(&settings.game_path)?
+            .to_string_lossy()
+            .to_string();
+    }
+    if settings.language != "en" && settings.language != "pt" {
+        settings.language = "en".to_string();
+    }
+    if settings.nexus_mod_id.trim().is_empty() {
+        settings.nexus_mod_id = "0".to_string();
+    }
+    write_settings_file(&settings)?;
+    Ok(settings)
+}
 
 fn decrypt_block_xtea(a: &mut u32, b: &mut u32, keys: &[u32; 4]) {
     let mut sum: u32 = XTEA_SUM;
     for _ in 0..32 {
         *b = b.wrapping_sub(
             ((*a << 4) ^ (*a >> 5)).wrapping_add(*a)
-                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize])
+                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize]),
         );
         sum = sum.wrapping_add(XTEA_DELTA);
         *a = a.wrapping_sub(
-            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b)
-                ^ sum.wrapping_add(keys[(sum & 3) as usize])
+            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b) ^ sum.wrapping_add(keys[(sum & 3) as usize]),
         );
     }
 }
@@ -54,29 +238,24 @@ fn encrypt_block_xtea(a: &mut u32, b: &mut u32, keys: &[u32; 4]) {
     let mut sum: u32 = 0;
     for _ in 0..32 {
         *a = a.wrapping_add(
-            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b)
-                ^ sum.wrapping_add(keys[(sum & 3) as usize])
+            ((*b << 4) ^ (*b >> 5)).wrapping_add(*b) ^ sum.wrapping_add(keys[(sum & 3) as usize]),
         );
         sum = sum.wrapping_sub(XTEA_DELTA);
         *b = b.wrapping_add(
             ((*a << 4) ^ (*a >> 5)).wrapping_add(*a)
-                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize])
+                ^ sum.wrapping_add(keys[((sum >> 11) & 3) as usize]),
         );
     }
 }
 
 fn decrypt_buffer(data: &[u8]) -> Vec<u8> {
     let mut decrypted = Vec::with_capacity(data.len());
-    let block_count = data.len() / 8;
-    for i in 0..block_count {
-        let offset = i * 8;
-        if offset + 8 <= data.len() {
-            let mut a = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]);
-            let mut b = u32::from_le_bytes([data[offset+4], data[offset+5], data[offset+6], data[offset+7]]);
-            decrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
-            decrypted.extend_from_slice(&a.to_le_bytes());
-            decrypted.extend_from_slice(&b.to_le_bytes());
-        }
+    for block in data.chunks_exact(8) {
+        let mut a = u32::from_le_bytes([block[0], block[1], block[2], block[3]]);
+        let mut b = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
+        decrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        decrypted.extend_from_slice(&a.to_le_bytes());
+        decrypted.extend_from_slice(&b.to_le_bytes());
     }
     while decrypted.last() == Some(&0) {
         decrypted.pop();
@@ -86,15 +265,14 @@ fn decrypt_buffer(data: &[u8]) -> Vec<u8> {
 
 fn encrypt_buffer(data: &[u8]) -> Vec<u8> {
     let mut padded = data.to_vec();
-    while padded.len() % 8 != 0 {
+    while !padded.len().is_multiple_of(8) {
         padded.push(0);
     }
+
     let mut encrypted = Vec::with_capacity(padded.len());
-    let block_count = padded.len() / 8;
-    for i in 0..block_count {
-        let offset = i * 8;
-        let mut a = u32::from_le_bytes([padded[offset], padded[offset+1], padded[offset+2], padded[offset+3]]);
-        let mut b = u32::from_le_bytes([padded[offset+4], padded[offset+5], padded[offset+6], padded[offset+7]]);
+    for block in padded.chunks_exact(8) {
+        let mut a = u32::from_le_bytes([block[0], block[1], block[2], block[3]]);
+        let mut b = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
         encrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
         encrypted.extend_from_slice(&a.to_le_bytes());
         encrypted.extend_from_slice(&b.to_le_bytes());
@@ -107,67 +285,457 @@ fn crc32_ieee(data: &[u8]) -> u32 {
     for &byte in data {
         crc ^= byte as u32;
         for _ in 0..8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB88320;
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB88320
             } else {
-                crc >>= 1;
-            }
+                crc >> 1
+            };
         }
     }
     !crc
 }
 
-fn read_packagedefinition(runtime: &Path) -> Result<String, String> {
+// バイト列を文字列にデコード (Latin-1 / ISO 8859-1 固定)
+fn decode_to_string(data: Vec<u8>) -> String {
+    data.iter().map(|&b| b as char).collect()
+}
+
+fn read_packagedefinition(runtime: &Path) -> Result<PackageDefinition, String> {
     let pkg_def = runtime.join("packagedefinition.txt");
     if !pkg_def.exists() {
-        return Ok(String::new());
+        return Err("Runtime\\packagedefinition.txt was not found".to_string());
     }
 
-    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
-    if data.len() >= 20 && data[0..16] == XTEA_HEADER {
-        let decrypted_bytes = decrypt_buffer(&data[20..]);
-        let content = String::from_utf8(decrypted_bytes)
-            .map_err(|_| "Decrypted packagedefinition.txt is not valid UTF-8".to_string())?;
-        Ok(content)
+    let raw = fs::read(&pkg_def).map_err(|e| e.to_string())?;
+
+    // UTF-8 BOM 除去
+    let data = if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        raw[3..].to_vec()
     } else {
-        let content = String::from_utf8(data)
-            .map_err(|_| "packagedefinition.txt is not valid UTF-8".to_string())?;
-        Ok(content)
+        raw
+    };
+
+    if data.len() >= 20 && data[..16] == XTEA_HEADER {
+        let decrypted = decrypt_buffer(&data[20..]);
+        let expected_crc = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+        let actual_crc = crc32_ieee(&decrypted);
+        if expected_crc != actual_crc {
+            return Err("packagedefinition.txt checksum mismatch".to_string());
+        }
+        let content = decode_to_string(decrypted);
+        Ok(PackageDefinition {
+            content,
+            encrypted: true,
+        })
+    } else {
+        let content = decode_to_string(data);
+        Ok(PackageDefinition {
+            content,
+            encrypted: false,
+        })
     }
 }
 
-fn write_packagedefinition(runtime: &Path, content: &str, was_encrypted: bool) -> Result<(), String> {
+fn write_packagedefinition(runtime: &Path, definition: &PackageDefinition) -> Result<(), String> {
     let pkg_def = runtime.join("packagedefinition.txt");
-    let content_bytes = content.as_bytes();
-    
-    if was_encrypted {
-        let encrypted_bytes = encrypt_buffer(content_bytes);
+    let content_bytes = definition.content.as_bytes();
+    if definition.encrypted {
+        let encrypted = encrypt_buffer(content_bytes);
         let crc = crc32_ieee(content_bytes);
-        
-        let mut file_data = Vec::with_capacity(16 + 4 + encrypted_bytes.len());
+        let mut file_data = Vec::with_capacity(20 + encrypted.len());
         file_data.extend_from_slice(&XTEA_HEADER);
         file_data.extend_from_slice(&crc.to_le_bytes());
-        file_data.extend_from_slice(&encrypted_bytes);
-        
-        fs::write(&pkg_def, &file_data).map_err(|e| e.to_string())?;
+        file_data.extend_from_slice(&encrypted);
+        fs::write(pkg_def, file_data).map_err(|e| e.to_string())
     } else {
-        fs::write(&pkg_def, content_bytes).map_err(|e| e.to_string())?;
+        fs::write(pkg_def, content_bytes).map_err(|e| e.to_string())
     }
-    
-    Ok(())
 }
 
-// ─── detect_game ──────────────────────────────────────────────────────────
+fn detect_line_ending(content: &str) -> &'static str {
+    if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+fn set_patchlevel_in_line(line: &str, level: u32) -> String {
+    let Some(start) = line.find("patchlevel=") else {
+        return format!("{line} patchlevel={level}");
+    };
+    let value_start = start + "patchlevel=".len();
+    let value_end = line[value_start..]
+        .find(char::is_whitespace)
+        .map(|offset| value_start + offset)
+        .unwrap_or(line.len());
+    format!("{}{}{}", &line[..value_start], level, &line[value_end..])
+}
+
+fn patchlevels_by_partition(runtime: &Path) -> Result<HashMap<u32, u32>, String> {
+    let mut max_patch_by_chunk: HashMap<u32, u32> = HashMap::new();
+    if !runtime.is_dir() {
+        return Ok(max_patch_by_chunk);
+    }
+
+    for entry in fs::read_dir(runtime).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some((chunk, patch, active)) = parse_patch_file_name(&name) {
+            if active {
+                max_patch_by_chunk
+                    .entry(chunk)
+                    .and_modify(|value| *value = (*value).max(patch))
+                    .or_insert(patch);
+            }
+        }
+    }
+
+    for value in max_patch_by_chunk.values_mut() {
+        if *value > 0 {
+            *value = (*value).max(MOD_PATCH_START);
+        }
+    }
+    Ok(max_patch_by_chunk)
+}
+
+fn apply_patchlevels(content: &str, patchlevels: &HashMap<u32, u32>) -> Result<String, String> {
+    let line_ending = detect_line_ending(content);
+    let had_trailing_newline = content.ends_with('\n');
+    let mut partition_index = 0_u32;
+    let mut touched = HashSet::new();
+    let mut lines = Vec::new();
+
+    for line in content.lines() {
+        if line.trim_start().starts_with("@partition") {
+            let level = patchlevels.get(&partition_index).copied().unwrap_or(0);
+            lines.push(set_patchlevel_in_line(line, level));
+            touched.insert(partition_index);
+            partition_index += 1;
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+
+    for chunk in patchlevels.keys() {
+        if !touched.contains(chunk) {
+            return Err(format!(
+                "packagedefinition.txt has no partition for chunk{chunk}"
+            ));
+        }
+    }
+
+    let mut next = lines.join(line_ending);
+    if had_trailing_newline {
+        next.push_str(line_ending);
+    }
+    Ok(next)
+}
+
+fn refresh_package_definition(runtime: &Path) -> Result<(), String> {
+    let mut definition = read_packagedefinition(runtime)?;
+    let patchlevels = patchlevels_by_partition(runtime)?;
+    definition.content = apply_patchlevels(&definition.content, &patchlevels)?;
+    write_packagedefinition(runtime, &definition)
+}
+
+fn parse_patch_file_name(name: &str) -> Option<(u32, u32, bool)> {
+    let lower = name.to_ascii_lowercase();
+    let (stem, active) = if let Some(stem) = lower.strip_suffix(".rpkg") {
+        (stem, true)
+    } else if let Some(stem) = lower.strip_suffix(".rpkg.disabled") {
+        (stem, false)
+    } else {
+        return None;
+    };
+
+    let rest = stem.strip_prefix("chunk")?;
+    let patch_pos = rest.find("patch")?;
+    let chunk = rest[..patch_pos].parse::<u32>().ok()?;
+    let patch = rest[patch_pos + "patch".len()..].parse::<u32>().ok()?;
+    Some((chunk, patch, active))
+}
+
+fn target_patch_start(_chunk: u32) -> u32 {
+    MOD_PATCH_START
+}
+
+fn used_patch_slots(runtime: Option<&Path>) -> Result<HashSet<(u32, u32)>, String> {
+    let mut used = HashSet::new();
+    let Some(runtime) = runtime else {
+        return Ok(used);
+    };
+    if !runtime.is_dir() {
+        return Ok(used);
+    }
+
+    // Runtime 内の既存パッチを収集
+    for entry in fs::read_dir(runtime).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some((chunk, patch, _)) = parse_patch_file_name(&name) {
+            used.insert((chunk, patch));
+        }
+    }
+
+    // バックアップ内の公式パッチを予約スロットとして追加
+    let backup_runtime = runtime
+        .parent()
+        .map(|game| game.join("Runtime_backup_original"));
+    if let Some(ref backup) = backup_runtime {
+        if backup.is_dir() {
+            for entry in fs::read_dir(backup).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if let Some((chunk, patch, _)) = parse_patch_file_name(&name) {
+                    used.insert((chunk, patch));
+                }
+            }
+        }
+    }
+
+    Ok(used)
+}
+
+fn assign_rpkg_targets(
+    pending: Vec<PendingRpkg>,
+    runtime: Option<&Path>,
+) -> Result<Vec<AssignedRpkg>, String> {
+    let mut used = used_patch_slots(runtime)?;
+    let mut assigned = Vec::new();
+
+    for item in pending {
+        let start = target_patch_start(item.chunk);
+        let mut patch = item.requested_patch.max(start);
+        while used.contains(&(item.chunk, patch)) {
+            patch += 1;
+        }
+        used.insert((item.chunk, patch));
+        assigned.push(AssignedRpkg {
+            target_name: format!("chunk{}patch{}.rpkg", item.chunk, patch),
+            target_patch: patch,
+            pending: item,
+        });
+    }
+
+    Ok(assigned)
+}
+
+fn metadata_from_json(content: &str) -> StoredModMetadata {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+        return StoredModMetadata::default();
+    };
+
+    StoredModMetadata {
+        name: value["name"].as_str().unwrap_or_default().to_string(),
+        author: value["author"].as_str().unwrap_or_default().to_string(),
+        description: value["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+        version: value["version"].as_str().unwrap_or_default().to_string(),
+        ..StoredModMetadata::default()
+    }
+}
+
+fn read_stored_metadata(path: &Path) -> StoredModMetadata {
+    let Ok(content) = fs::read_to_string(path) else {
+        return StoredModMetadata::default();
+    };
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+fn now_unix_string() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
+}
+
+fn pending_from_rpkg_path(path: &Path) -> Result<PendingRpkg, String> {
+    let original_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "RPKG path has no file name".to_string())?
+        .to_string();
+    let (chunk, requested_patch, _) = parse_patch_file_name(&original_name)
+        .ok_or_else(|| format!("{original_name} is not named like chunk0patch2.rpkg"))?;
+    let data = fs::read(path).map_err(|e| e.to_string())?;
+    Ok(PendingRpkg {
+        size: data.len() as u64,
+        data,
+        original_name,
+        chunk,
+        requested_patch,
+    })
+}
+
+fn read_zip_package(
+    path: &Path,
+) -> Result<(Vec<PendingRpkg>, StoredModMetadata, bool, bool), String> {
+    let file = fs::File::open(path).map_err(|e| format!("Error opening ZIP: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {e}"))?;
+    let mut pending = Vec::new();
+    let mut metadata = StoredModMetadata::default();
+    let mut has_packagedefinition = false;
+    let mut has_metadata = false;
+
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|e| e.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().replace('\\', "/");
+        let file_name = Path::new(&name)
+            .file_name()
+            .and_then(|part| part.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let lower = file_name.to_ascii_lowercase();
+
+        if lower == "packagedefinition.txt" {
+            has_packagedefinition = true;
+            continue;
+        }
+        if lower == "mod.json" || lower.ends_with(".metadata.json") {
+            let mut content = String::new();
+            entry
+                .read_to_string(&mut content)
+                .map_err(|e| e.to_string())?;
+            metadata = metadata_from_json(&content);
+            has_metadata = true;
+            continue;
+        }
+        if lower.ends_with(".rpkg") {
+            let (chunk, requested_patch, _) = parse_patch_file_name(&file_name)
+                .ok_or_else(|| format!("{file_name} is not named like chunk0patch2.rpkg"))?;
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
+            pending.push(PendingRpkg {
+                original_name: file_name,
+                size: data.len() as u64,
+                data,
+                chunk,
+                requested_patch,
+            });
+        }
+    }
+
+    Ok((pending, metadata, has_packagedefinition, has_metadata))
+}
+
+fn inspect_mod_file(path: &Path, runtime: Option<&Path>) -> Result<ModPreview, String> {
+    if !path.is_file() {
+        return Err(format!("File not found: {}", path.display()));
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("mod")
+        .to_string();
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let (pending, has_packagedefinition, has_metadata) = match extension.as_str() {
+        "rpkg" => (vec![pending_from_rpkg_path(path)?], false, false),
+        "zip" => {
+            let (items, _, has_pkg, has_meta) = read_zip_package(path)?;
+            (items, has_pkg, has_meta)
+        }
+        _ => return Err("File must be .rpkg or .zip".to_string()),
+    };
+
+    let assigned = assign_rpkg_targets(pending, runtime)?;
+    let mut warnings = Vec::new();
+    if has_packagedefinition {
+        warnings.push(
+            "Included packagedefinition.txt will be ignored and regenerated safely.".to_string(),
+        );
+    }
+
+    let rpkg_files = assigned
+        .into_iter()
+        .map(|item| {
+            if item.pending.original_name != item.target_name {
+                warnings.push(format!(
+                    "{} will be installed as {} to avoid reserved or occupied patch slots.",
+                    item.pending.original_name, item.target_name
+                ));
+            }
+            PreviewRpkg {
+                original_name: item.pending.original_name,
+                target_name: item.target_name,
+                chunk: item.pending.chunk,
+                requested_patch: item.pending.requested_patch,
+                target_patch: item.target_patch,
+                size: item.pending.size,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ModPreview {
+        file_name,
+        package_type: extension,
+        installable: !rpkg_files.is_empty(),
+        rpkg_files,
+        has_packagedefinition,
+        has_metadata,
+        warnings,
+    })
+}
+
+#[tauri::command]
+pub async fn inspect_mod(
+    mod_path: String,
+    game_path: Option<String>,
+) -> Result<ModPreview, String> {
+    let runtime = match game_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        Some(path) => Some(normalize_game_path(path)?.join("Runtime")),
+        None => None,
+    };
+    inspect_mod_file(Path::new(&mod_path), runtime.as_deref())
+}
 
 #[tauri::command]
 pub async fn detect_game() -> GameInfo {
+    let settings = read_settings_file();
+    if !settings.game_path.trim().is_empty() {
+        if let Ok(path) = normalize_game_path(&settings.game_path) {
+            return GameInfo {
+                found: true,
+                path: path.to_string_lossy().to_string(),
+                platform: "manual".into(),
+            };
+        }
+    }
+
     if let Some(path) = find_steam_game() {
-        return GameInfo { found: true, path, platform: "steam".into() };
+        return GameInfo {
+            found: true,
+            path,
+            platform: "steam".into(),
+        };
     }
     if let Some(path) = find_epic_game() {
-        return GameInfo { found: true, path, platform: "epic".into() };
+        return GameInfo {
+            found: true,
+            path,
+            platform: "epic".into(),
+        };
     }
-    GameInfo { found: false, path: String::new(), platform: "unknown".into() }
+    GameInfo {
+        found: false,
+        path: String::new(),
+        platform: "unknown".into(),
+    }
 }
 
 fn find_steam_game() -> Option<String> {
@@ -183,37 +751,38 @@ fn find_steam_game() -> Option<String> {
             .ok()?;
 
         let steam_path: String = steam_key.get_value("InstallPath").ok()?;
-        let libs = get_steam_library_paths(&steam_path);
-
-        for lib in &libs {
-            let candidates = [
-                format!("{}\\steamapps\\common\\007 First Light", lib),
-                format!("{}\\steamapps\\common\\007FirstLight", lib),
-                format!("{}\\steamapps\\common\\Project 007", lib),
-            ];
-            for c in &candidates {
-                if Path::new(c).exists() {
-                    return Some(c.clone());
+        for lib in get_steam_library_paths(&steam_path) {
+            for candidate in [
+                format!("{lib}\\steamapps\\common\\007 First Light"),
+                format!("{lib}\\steamapps\\common\\007FirstLight"),
+                format!("{lib}\\steamapps\\common\\Project 007"),
+            ] {
+                if normalize_game_path(&candidate).is_ok() {
+                    return Some(candidate);
                 }
             }
         }
         None
     }
     #[cfg(not(target_os = "windows"))]
-    None
+    {
+        None
+    }
 }
 
 fn get_steam_library_paths(steam_path: &str) -> Vec<String> {
     let mut paths = vec![steam_path.to_string()];
-    let vdf = format!("{}\\steamapps\\libraryfolders.vdf", steam_path);
+    let vdf = format!("{steam_path}\\steamapps\\libraryfolders.vdf");
     if let Ok(content) = fs::read_to_string(&vdf) {
         for line in content.lines() {
             let line = line.trim();
             if line.contains("\"path\"") {
                 let parts: Vec<&str> = line.splitn(4, '"').collect();
                 if parts.len() >= 4 {
-                    let p = parts[3].replace("\\\\", "\\");
-                    if !p.is_empty() { paths.push(p); }
+                    let path = parts[3].replace("\\\\", "\\");
+                    if !path.is_empty() {
+                        paths.push(path);
+                    }
                 }
             }
         }
@@ -235,119 +804,181 @@ fn find_epic_game() -> Option<String> {
 
         let base: String = epic_key.get_value("AppDataPath").ok()?;
         let manifests = PathBuf::from(&base).parent()?.join("Manifests");
-        if !manifests.exists() { return None; }
-
-        for entry in fs::read_dir(&manifests).ok()? {
+        for entry in fs::read_dir(manifests).ok()? {
             let entry = entry.ok()?;
             let content = fs::read_to_string(entry.path()).ok()?;
             if content.contains("007") || content.contains("Project007") {
-                if let Some(loc) = extract_json_field(&content, "InstallLocation") {
-                    if Path::new(&loc).exists() { return Some(loc); }
+                if let Some(location) = extract_json_field(&content, "InstallLocation") {
+                    if normalize_game_path(&location).is_ok() {
+                        return Some(location);
+                    }
                 }
             }
         }
         None
     }
     #[cfg(not(target_os = "windows"))]
-    None
-}
-
-fn extract_json_field(json: &str, field: &str) -> Option<String> {
-    let key = format!("\"{}\"", field);
-    let pos = json.find(&key)?;
-    let after = &json[pos + key.len()..];
-    let colon = after.find(':')?;
-    let value_start = after[colon + 1..].trim_start();
-    if value_start.starts_with('"') {
-        let end = value_start[1..].find('"')?;
-        Some(value_start[1..=end].replace("\\\\", "\\").replace("\\/", "/"))
-    } else {
+    {
         None
     }
 }
 
-// ─── get_mod_status ───────────────────────────────────────────────────────
+fn extract_json_field(json: &str, field: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    value[field].as_str().map(|text| text.to_string())
+}
 
 #[tauri::command]
 pub async fn get_mod_status(game_path: String) -> ModStatus {
     if game_path.is_empty() {
-        return ModStatus { installed: false, version: String::new(), backup_exists: false };
+        return ModStatus {
+            installed: false,
+            version: String::new(),
+            backup_exists: false,
+        };
     }
-    let backup = PathBuf::from(&game_path).join("Runtime_backup_original");
-    
-    // Check if there are any active mods
-    let mut installed = false;
-    let mut version = String::new();
-    
-    if let Ok(mods) = list_mods(game_path.clone()).await {
-        installed = mods.iter().any(|m| m.active);
-        if installed {
-            version = "0.1.0".to_string(); // Fallback representation
-        }
+
+    let Ok(game_dir) = normalize_game_path(&game_path) else {
+        return ModStatus {
+            installed: false,
+            version: String::new(),
+            backup_exists: false,
+        };
+    };
+
+    let backup = game_dir.join("Runtime_backup_original");
+    let installed = list_mods(game_dir.to_string_lossy().to_string())
+        .await
+        .map(|mods| mods.iter().any(|item| item.active))
+        .unwrap_or(false);
+
+    ModStatus {
+        installed,
+        version: if installed {
+            "managed".to_string()
+        } else {
+            String::new()
+        },
+        backup_exists: backup.exists(),
     }
-    
-    ModStatus { installed, version, backup_exists: backup.exists() }
 }
 
 #[tauri::command]
-pub async fn install_mod(game_path: String, mod_path: String, lang: String) -> Result<String, String> {
+pub async fn install_mod(
+    game_path: String,
+    mod_path: String,
+    lang: String,
+) -> Result<String, String> {
     let is_pt = lang == "pt";
-    if game_path.is_empty() { 
-        return Err(if is_pt { "Caminho do jogo não informado." } else { "Game path not provided." }.into()); 
-    }
-    if mod_path.is_empty()  { 
-        return Err(if is_pt { "Caminho do mod não informado." } else { "Mod path not provided." }.into()); 
-    }
-
-    let game_dir   = PathBuf::from(&game_path);
-    let runtime    = game_dir.join("Runtime");
-    let backup     = game_dir.join("Runtime_backup_original");
-    let mod_file   = PathBuf::from(&mod_path);
+    let game_dir = normalize_game_path(&game_path)?;
+    let runtime = game_dir.join("Runtime");
+    let backup = game_dir.join("Runtime_backup_original");
+    let mod_file = PathBuf::from(&mod_path);
 
     if !mod_file.exists() {
-        return Err(if is_pt { format!("Arquivo não encontrado: {}", mod_path) } else { format!("File not found: {}", mod_path) });
+        return Err(localized(
+            is_pt,
+            &format!("Arquivo não encontrado: {mod_path}"),
+            &format!("File not found: {mod_path}"),
+        ));
     }
 
-    let ext = mod_file.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if ext != "rpkg" && ext != "zip" {
-        return Err(if is_pt { "O arquivo deve ser .rpkg ou .zip" } else { "File must be .rpkg or .zip" }.into());
-    }
-
-    // Cria Runtime se não existir
-    if !runtime.exists() {
-        fs::create_dir_all(&runtime).map_err(|e| {
-            if is_pt { format!("Erro ao criar pasta Runtime: {}", e) } else { format!("Error creating Runtime directory: {}", e) }
-        })?;
-    }
-
-    // Backup (só se ainda não existe)
     if !backup.exists() {
-        copy_dir_all(&runtime, &backup).map_err(|e| {
-            if is_pt { format!("Erro no backup: {}", e) } else { format!("Error creating backup: {}", e) }
-        })?;
+        copy_dir_all(&runtime, &backup).map_err(|e| e.to_string())?;
     }
 
-    if ext == "rpkg" {
-        let dest = runtime.join(mod_file.file_name().unwrap());
-        fs::copy(&mod_file, &dest).map_err(|e| {
-            if is_pt { format!("Erro ao copiar RPKG: {}", e) } else { format!("Error copying RPKG: {}", e) }
-        })?;
-        update_package_definition(&runtime, mod_file.file_name().unwrap().to_str().unwrap())?;
+    let extension = mod_file
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let source_package = mod_file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("mod")
+        .to_string();
+
+    let (pending, base_metadata) = match extension.as_str() {
+        "rpkg" => (
+            vec![pending_from_rpkg_path(&mod_file)?],
+            StoredModMetadata::default(),
+        ),
+        "zip" => {
+            let (items, metadata, _, _) = read_zip_package(&mod_file)?;
+            (items, metadata)
+        }
+        _ => {
+            return Err(localized(
+                is_pt,
+                "O arquivo deve ser .rpkg ou .zip",
+                "File must be .rpkg or .zip",
+            ));
+        }
+    };
+
+    if pending.is_empty() {
+        return Err(localized(
+            is_pt,
+            "Nenhum RPKG válido encontrado no pacote",
+            "No valid RPKG files were found in the package",
+        ));
+    }
+
+    let assigned = assign_rpkg_targets(pending, Some(&runtime))?;
+    for item in assigned {
+        let target_path = runtime.join(&item.target_name);
+        fs::write(&target_path, &item.pending.data).map_err(|e| e.to_string())?;
+
+        let fallback_name = item
+            .pending
+            .original_name
+            .trim_end_matches(".rpkg")
+            .to_string();
+        let metadata = StoredModMetadata {
+            name: if base_metadata.name.is_empty() {
+                fallback_name
+            } else {
+                base_metadata.name.clone()
+            },
+            author: base_metadata.author.clone(),
+            description: base_metadata.description.clone(),
+            version: base_metadata.version.clone(),
+            original_filename: item.pending.original_name,
+            installed_filename: item.target_name.clone(),
+            source_package: source_package.clone(),
+            installed_at: now_unix_string(),
+        };
+        let metadata_path = runtime.join(format!(
+            "{}.metadata.json",
+            item.target_name.trim_end_matches(".rpkg")
+        ));
+        let metadata_json = serde_json::to_vec_pretty(&metadata).map_err(|e| e.to_string())?;
+        fs::write(metadata_path, metadata_json).map_err(|e| e.to_string())?;
+    }
+
+    refresh_package_definition(&runtime)?;
+    fs::write(game_dir.join(".flmm_installed"), "0.2.0").map_err(|e| e.to_string())?;
+
+    Ok(localized(
+        is_pt,
+        "Mod instalado com sucesso!",
+        "Mod installed successfully!",
+    ))
+}
+
+fn localized(is_pt: bool, pt: &str, en: &str) -> String {
+    if is_pt {
+        pt.to_string()
     } else {
-        extract_rpkg_from_zip(&mod_file, &runtime)?;
+        en.to_string()
     }
-
-    let version = "0.1.0";
-    fs::write(game_dir.join(".flmm_installed"), version)
-        .map_err(|e| {
-            if is_pt { format!("Erro ao gravar versão: {}", e) } else { format!("Error writing version: {}", e) }
-        })?;
-
-    Ok(if is_pt { "Mod instalado com sucesso!" } else { "Mod installed successfully!" }.into())
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if !src.exists() { return Ok(()); }
+    if !src.exists() {
+        return Ok(());
+    }
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
@@ -361,127 +992,63 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn update_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), String> {
-    let pkg_def = runtime.join("packagedefinition.txt");
-    if !pkg_def.exists() {
-        return Ok(());
-    }
-
-    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
-    let (content, was_encrypted) = if data.len() >= 20 && data[0..16] == XTEA_HEADER {
-        let decrypted = decrypt_buffer(&data[20..]);
-        let s = String::from_utf8(decrypted).map_err(|_| "Decrypted packagedefinition is not UTF-8".to_string())?;
-        (s, true)
-    } else {
-        let s = String::from_utf8(data).map_err(|_| "packagedefinition is not UTF-8".to_string())?;
-        (s, false)
-    };
-
-    let chunk = rpkg_name.trim_end_matches(".rpkg");
-    let entry = format!("@include {}", chunk);
-    if !content.contains(&entry) {
-        let mut new_content = content;
-        if !new_content.is_empty() && !new_content.ends_with('\n') { new_content.push('\n'); }
-        new_content.push_str(&entry);
-        new_content.push('\n');
-        write_packagedefinition(runtime, &new_content, was_encrypted)?;
-    }
-    Ok(())
-}
-
-fn extract_rpkg_from_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
-    use std::io::Read;
-    let file = fs::File::open(zip_path).map_err(|e| format!("Error opening ZIP: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {}", e))?;
-
-    // First search for mod.json anywhere inside the zip
-    let mut metadata_content: Option<String> = None;
-    for i in 0..archive.len() {
-        if let Ok(mut zf) = archive.by_index(i) {
-            if zf.name().ends_with("mod.json") {
-                let mut buf = String::new();
-                if zf.read_to_string(&mut buf).is_ok() {
-                    metadata_content = Some(buf);
-                    break;
-                }
-            }
-        }
-    }
-
-    let mut rpkg_files = Vec::new();
-
-    for i in 0..archive.len() {
-        let mut zf = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = zf.name().to_string();
-        if name.ends_with(".rpkg") {
-            let fname = Path::new(&name).file_name().unwrap();
-            let out = dest.join(fname);
-            let mut buf = Vec::new();
-            zf.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            fs::write(&out, &buf).map_err(|e| e.to_string())?;
-            update_package_definition(dest, fname.to_str().unwrap())?;
-            rpkg_files.push(fname.to_str().unwrap().to_string());
-        }
-    }
-
-    // Write companion metadata files
-    if let Some(ref meta) = metadata_content {
-        for rpkg in &rpkg_files {
-            let id = rpkg.trim_end_matches(".rpkg");
-            let meta_path = dest.join(format!("{}.metadata.json", id));
-            let _ = fs::write(meta_path, meta);
-        }
-    }
-
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn uninstall_mod(game_path: String, lang: String) -> Result<String, String> {
     let is_pt = lang == "pt";
-    if game_path.is_empty() { 
-        return Err(if is_pt { "Caminho do jogo não informado." } else { "Game path not provided." }.into()); 
-    }
-
-    let game_dir = PathBuf::from(&game_path);
-    let runtime  = game_dir.join("Runtime");
-    let backup   = game_dir.join("Runtime_backup_original");
-    let marker   = game_dir.join(".flmm_installed");
+    let game_dir = normalize_game_path(&game_path)?;
+    let runtime = game_dir.join("Runtime");
+    let backup = game_dir.join("Runtime_backup_original");
+    let marker = game_dir.join(".flmm_installed");
 
     if !backup.exists() {
-        return Err(if is_pt { "Backup não encontrado. Não é possível desinstalar com segurança." } else { "Backup not found. Cannot safely uninstall." }.into());
+        return Err(localized(
+            is_pt,
+            "Backup não encontrado. Não é possível desinstalar com segurança.",
+            "Backup not found. Cannot safely uninstall.",
+        ));
     }
 
     if runtime.exists() {
-        fs::remove_dir_all(&runtime).map_err(|e| {
-            if is_pt { format!("Erro ao remover pasta Runtime: {}", e) } else { format!("Error removing Runtime directory: {}", e) }
-        })?;
+        fs::remove_dir_all(&runtime).map_err(|e| e.to_string())?;
+    }
+    copy_dir_all(&backup, &runtime).map_err(|e| e.to_string())?;
+    fs::remove_dir_all(&backup).map_err(|e| e.to_string())?;
+    if marker.exists() {
+        fs::remove_file(marker).map_err(|e| e.to_string())?;
     }
 
-    copy_dir_all(&backup, &runtime).map_err(|e| {
-        if is_pt { format!("Erro ao restaurar backup: {}", e) } else { format!("Error restoring backup: {}", e) }
-    })?;
-    fs::remove_dir_all(&backup).map_err(|e| {
-        if is_pt { format!("Erro ao remover backup: {}", e) } else { format!("Error removing backup directory: {}", e) }
-    })?;
-    let _ = fs::remove_file(&marker);
-
-    Ok(if is_pt { "Mods desinstalados! Arquivos originais restaurados." } else { "Mods uninstalled! Original game files restored." }.into())
+    Ok(localized(
+        is_pt,
+        "Mods desinstalados. Arquivos originais restaurados.",
+        "Mods uninstalled. Original game files restored.",
+    ))
 }
 
-// ─── check_updates ────────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn delete_backup(game_path: String) -> Result<(), String> {
+    let game_dir = normalize_game_path(&game_path)?;
+    let backup = game_dir.join("Runtime_backup_original");
+    if backup.exists() {
+        fs::remove_dir_all(backup).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 #[tauri::command]
-pub async fn check_updates(current_version: String, mod_id: String, api_key: Option<String>) -> Result<NexusRelease, String> {
+pub async fn check_updates(
+    current_version: String,
+    mod_id: String,
+    api_key: Option<String>,
+) -> Result<NexusRelease, String> {
     if mod_id == "0" || mod_id.is_empty() {
         return Ok(NexusRelease {
-            version: "0.1.0".into(),
+            version: "0.2.0".into(),
             url: "https://www.nexusmods.com/007firstlight".into(),
             has_update: false,
         });
     }
 
-    let url = format!("https://api.nexusmods.com/v1/games/007firstlight/mods/{}.json", mod_id);
+    let url = format!("https://api.nexusmods.com/v1/games/007firstlight/mods/{mod_id}.json");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -489,203 +1056,372 @@ pub async fn check_updates(current_version: String, mod_id: String, api_key: Opt
 
     let mut builder = client
         .get(&url)
-        .header("User-Agent", "First-Light-Mod-Manager/0.1.0");
-
-    if let Some(ref key) = api_key {
-        if !key.trim().is_empty() {
-            builder = builder.header("apikey", key.trim());
-        }
+        .header("User-Agent", "First-Light-Mod-Manager/0.2.0");
+    if let Some(key) = api_key.filter(|key| !key.trim().is_empty()) {
+        builder = builder.header("apikey", key.trim());
     }
 
-    let resp = builder
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let resp = builder.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Ok(NexusRelease {
-            version: "0.1.0".into(),
-            url: format!("https://www.nexusmods.com/007firstlight/mods/{}", mod_id),
+            version: "0.2.0".into(),
+            url: format!("https://www.nexusmods.com/007firstlight/mods/{mod_id}"),
             has_update: false,
         });
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let latest = json["version"].as_str().unwrap_or("0.1.0").to_string();
+    let latest = json["version"].as_str().unwrap_or("0.2.0").to_string();
     let has_update = !current_version.is_empty() && latest != current_version;
-
     Ok(NexusRelease {
         version: latest,
-        url: format!("https://www.nexusmods.com/007firstlight/mods/{}", mod_id),
+        url: format!("https://www.nexusmods.com/007firstlight/mods/{mod_id}"),
         has_update,
     })
 }
 
-// ─── open_game_folder ────────────────────────────────────────────────────
-
 #[tauri::command]
 pub async fn open_game_folder(game_path: String) -> Result<(), String> {
-    if game_path.is_empty() { return Err("No game directory configured.".into()); }
+    let game_dir = normalize_game_path(&game_path)?;
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
-        .arg(&game_path)
+        .arg(game_dir)
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-// ─── Mod Toggle List implementation ──────────────────────────────────────────
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ModInfo {
-    pub id: String,
-    pub filename: String,
-    pub name: String,
-    pub author: String,
-    pub description: String,
-    pub version: String,
-    pub active: bool,
-}
-
-fn remove_package_definition(runtime: &Path, rpkg_name: &str) -> Result<(), String> {
-    let pkg_def = runtime.join("packagedefinition.txt");
-    if !pkg_def.exists() { return Ok(()); }
-    
-    let data = fs::read(&pkg_def).map_err(|e| e.to_string())?;
-    let (content, was_encrypted) = if data.len() >= 20 && data[0..16] == XTEA_HEADER {
-        let decrypted = decrypt_buffer(&data[20..]);
-        let s = String::from_utf8(decrypted).map_err(|_| "Decrypted packagedefinition is not UTF-8".to_string())?;
-        (s, true)
-    } else {
-        let s = String::from_utf8(data).map_err(|_| "packagedefinition is not UTF-8".to_string())?;
-        (s, false)
+fn current_patchlevels(runtime: &Path) -> HashMap<u32, u32> {
+    let Ok(definition) = read_packagedefinition(runtime) else {
+        return HashMap::new();
     };
-
-    let chunk = rpkg_name.trim_end_matches(".rpkg");
-    let entry = format!("@include {}", chunk);
-
-    let lines: Vec<&str> = content.lines()
-        .filter(|line| line.trim() != entry)
-        .collect();
-
-    let mut new_content = lines.join("\n");
-    if !new_content.is_empty() {
-        new_content.push('\n');
+    let mut levels = HashMap::new();
+    let mut index = 0_u32;
+    for line in definition.content.lines() {
+        if line.trim_start().starts_with("@partition") {
+            if let Some(start) = line.find("patchlevel=") {
+                let value_start = start + "patchlevel=".len();
+                let value = line[value_start..]
+                    .split_whitespace()
+                    .next()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
+                levels.insert(index, value);
+            }
+            index += 1;
+        }
     }
-    write_packagedefinition(runtime, &new_content, was_encrypted)?;
-    Ok(())
+    levels
 }
 
 #[tauri::command]
 pub async fn list_mods(game_path: String) -> Result<Vec<ModInfo>, String> {
-    if game_path.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let runtime = PathBuf::from(&game_path).join("Runtime");
-    let backup = PathBuf::from(&game_path).join("Runtime_backup_original");
-
+    let game_dir = normalize_game_path(&game_path)?;
+    let runtime = game_dir.join("Runtime");
     if !runtime.exists() {
         return Ok(Vec::new());
     }
 
-    let pkg_def = runtime.join("packagedefinition.txt");
-    let includes_content = if pkg_def.exists() {
-        read_packagedefinition(&runtime).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
+    let patchlevels = current_patchlevels(&runtime);
     let mut mods = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(&runtime) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rpkg") {
-                    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
-                    let id = filename.trim_end_matches(".rpkg").to_string();
+    for entry in fs::read_dir(&runtime).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let Some((chunk, patch, file_active)) = parse_patch_file_name(&file_name) else {
+            continue;
+        };
 
-                    if backup.exists() {
-                        let original_file = backup.join(&filename);
-                        if original_file.exists() {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
+        let id = file_name
+            .trim_end_matches(".disabled")
+            .trim_end_matches(".rpkg")
+            .to_string();
+        let metadata = read_stored_metadata(&runtime.join(format!("{id}.metadata.json")));
+        let level = patchlevels.get(&chunk).copied().unwrap_or(0);
+        let active = file_active && level >= patch;
 
-                    let meta_file = runtime.join(format!("{}.metadata.json", id));
-                    let mut name = id.clone();
-                    let mut author = String::new();
-                    let mut description = String::new();
-                    let mut version = String::new();
-
-                    if meta_file.exists() {
-                        if let Ok(content) = fs::read_to_string(&meta_file) {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                name = json["name"].as_str().unwrap_or(&id).to_string();
-                                author = json["author"].as_str().unwrap_or("").to_string();
-                                description = json["description"].as_str().unwrap_or("").to_string();
-                                version = json["version"].as_str().unwrap_or("").to_string();
-                            }
-                        }
-                    }
-
-                    let entry_str = format!("@include {}", id);
-                    let active = includes_content.lines().any(|line| line.trim() == entry_str);
-
-                    mods.push(ModInfo {
-                        id,
-                        filename,
-                        name,
-                        author,
-                        description,
-                        version,
-                        active,
-                    });
-                }
-            }
-        }
+        mods.push(ModInfo {
+            id: id.clone(),
+            filename: format!("{id}.rpkg"),
+            original_filename: if metadata.original_filename.is_empty() {
+                format!("{id}.rpkg")
+            } else {
+                metadata.original_filename
+            },
+            name: if metadata.name.is_empty() {
+                id.clone()
+            } else {
+                metadata.name
+            },
+            author: metadata.author,
+            description: metadata.description,
+            version: metadata.version,
+            active,
+            chunk,
+            patch,
+        });
     }
 
+    mods.sort_by_key(|item| (item.chunk, item.patch));
     Ok(mods)
 }
 
 #[tauri::command]
 pub async fn toggle_mod(game_path: String, mod_id: String, active: bool) -> Result<(), String> {
-    if game_path.is_empty() || mod_id.is_empty() {
-        return Err("Invalid parameters.".into());
-    }
+    let game_dir = normalize_game_path(&game_path)?;
+    let runtime = game_dir.join("Runtime");
+    let active_path = runtime.join(format!("{mod_id}.rpkg"));
+    let disabled_path = runtime.join(format!("{mod_id}.rpkg.disabled"));
 
-    let runtime = PathBuf::from(&game_path).join("Runtime");
     if active {
-        update_package_definition(&runtime, &format!("{}.rpkg", mod_id))?;
-    } else {
-        remove_package_definition(&runtime, &format!("{}.rpkg", mod_id))?;
+        if disabled_path.exists() {
+            if active_path.exists() {
+                return Err(format!("{} already exists", active_path.display()));
+            }
+            fs::rename(&disabled_path, &active_path).map_err(|e| e.to_string())?;
+        } else if !active_path.exists() {
+            return Err(format!("{mod_id}.rpkg was not found"));
+        }
+    } else if active_path.exists() {
+        fs::rename(&active_path, &disabled_path).map_err(|e| e.to_string())?;
     }
 
-    Ok(())
+    refresh_package_definition(&runtime)
 }
 
 #[tauri::command]
 pub async fn delete_mod(game_path: String, mod_id: String) -> Result<(), String> {
-    if game_path.is_empty() || mod_id.is_empty() {
-        return Err("Invalid parameters.".into());
+    let game_dir = normalize_game_path(&game_path)?;
+    let runtime = game_dir.join("Runtime");
+    for path in [
+        runtime.join(format!("{mod_id}.rpkg")),
+        runtime.join(format!("{mod_id}.rpkg.disabled")),
+        runtime.join(format!("{mod_id}.metadata.json")),
+    ] {
+        if path.exists() {
+            fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
+    refresh_package_definition(&runtime)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("flmm_{name}_{suffix}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
-    let runtime = PathBuf::from(&game_path).join("Runtime");
-    let mod_file = runtime.join(format!("{}.rpkg", mod_id));
-    let meta_file = runtime.join(format!("{}.metadata.json", mod_id));
-
-    let _ = remove_package_definition(&runtime, &format!("{}.rpkg", mod_id));
-
-    if mod_file.exists() {
-        fs::remove_file(mod_file).map_err(|e| e.to_string())?;
-    }
-    if meta_file.exists() {
-        let _ = fs::remove_file(meta_file);
+    fn sample_packagedefinition() -> String {
+        "// --- Chunk Boot + PlayGo\r\n@partition name=super parent=none type=standard patchlevel=0\r\n[assembly:/_glacier/ini/globalresources.ini].pc_resourceidx\r\n// --- Chunk Rest of missions\r\n@partition name=base parent=super type=standard patchlevel=0\r\n".to_string()
     }
 
-    Ok(())
+    fn write_encrypted_packagedefinition(runtime: &Path, content: &str) {
+        let definition = PackageDefinition {
+            content: content.to_string(),
+            encrypted: true,
+        };
+        write_packagedefinition(runtime, &definition).unwrap();
+    }
+
+    #[test]
+    fn refresh_package_definition_sets_patchlevel_and_preserves_crlf() {
+        let game = unique_temp_dir("pkg");
+        let runtime = game.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        write_encrypted_packagedefinition(&runtime, &sample_packagedefinition());
+        fs::write(runtime.join("chunk0patch2.rpkg"), b"dummy").unwrap();
+
+        refresh_package_definition(&runtime).unwrap();
+        let definition = read_packagedefinition(&runtime).unwrap();
+
+        assert!(definition.encrypted);
+        assert!(definition
+            .content
+            .contains("@partition name=super parent=none type=standard patchlevel=100"));
+        assert!(definition
+            .content
+            .contains("@partition name=base parent=super type=standard patchlevel=0"));
+        assert!(
+            !definition
+                .content
+                .as_bytes()
+                .windows(1)
+                .any(|window| window == b"\n")
+                || definition.content.contains("\r\n")
+        );
+
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn inactive_mods_lower_patchlevel_to_zero() {
+        let game = unique_temp_dir("toggle");
+        let runtime = game.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        write_encrypted_packagedefinition(&runtime, &sample_packagedefinition());
+        fs::write(runtime.join("chunk0patch2.rpkg.disabled"), b"dummy").unwrap();
+
+        refresh_package_definition(&runtime).unwrap();
+        let definition = read_packagedefinition(&runtime).unwrap();
+
+        assert!(definition
+            .content
+            .contains("@partition name=super parent=none type=standard patchlevel=0"));
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn assigns_mod_to_patch100_slot() {
+        let runtime = unique_temp_dir("assign");
+        let pending = PendingRpkg {
+            original_name: "chunk0patch1.rpkg".to_string(),
+            data: vec![1, 2, 3],
+            size: 3,
+            chunk: 0,
+            requested_patch: 1,
+        };
+
+        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
+
+        assert_eq!(assigned[0].target_name, "chunk0patch100.rpkg");
+        fs::remove_dir_all(runtime).unwrap();
+    }
+
+    #[test]
+    fn inspect_zip_reports_ignored_packagedefinition() {
+        let root = unique_temp_dir("zip");
+        let zip_path = root.join("mod.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("chunk0patch1.rpkg", options).unwrap();
+        zip.write_all(b"rpkg").unwrap();
+        zip.start_file("packagedefinition.txt", options).unwrap();
+        zip.write_all(b"ignored").unwrap();
+        zip.start_file("mod.json", options).unwrap();
+        zip.write_all(br#"{"name":"Preview Mod","version":"1.2"}"#)
+            .unwrap();
+        zip.finish().unwrap();
+
+        let preview = inspect_mod_file(&zip_path, Some(&root)).unwrap();
+
+        assert!(preview.installable);
+        assert!(preview.has_packagedefinition);
+        assert!(preview.has_metadata);
+        assert_eq!(preview.rpkg_files[0].target_name, "chunk0patch100.rpkg");
+        assert!(preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("ignored")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn decode_to_string_is_latin1_fixed() {
+        // Latin-1 固定: 各バイトをそのまま Unicode コードポイントとして扱う
+        let ascii = "hello".as_bytes().to_vec();
+        assert_eq!(decode_to_string(ascii), "hello");
+
+        // 0xE9 = Latin-1 で 'é'
+        let latin1 = vec![0x68, 0x65, 0x6C, 0x6C, 0xE9];
+        assert_eq!(decode_to_string(latin1), "hell\u{00e9}");
+    }
+
+    #[test]
+    fn read_packagedefinition_strips_utf8_bom() {
+        let game = unique_temp_dir("bom");
+        let runtime = game.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        // BOM + ASCII テキスト
+        let mut content = vec![0xEF, 0xBB, 0xBF];
+        content.extend_from_slice(b"@partition name=super parent=none type=standard patchlevel=0\r\n");
+        fs::write(runtime.join("packagedefinition.txt"), &content).unwrap();
+
+        let definition = read_packagedefinition(&runtime).unwrap();
+        assert!(!definition.encrypted);
+        assert!(definition.content.starts_with("@partition"));
+
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn read_packagedefinition_handles_latin1_content() {
+        let game = unique_temp_dir("latin1");
+        let runtime = game.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        // 0xA9 (©), 0xE9 (é) — Latin-1 で有効、UTF-8 では不正
+        let content = b"// copyright \xA9 test\r\n@partition name=super parent=none type=standard patchlevel=0\r\n".to_vec();
+        fs::write(runtime.join("packagedefinition.txt"), &content).unwrap();
+
+        let definition = read_packagedefinition(&runtime).unwrap();
+        assert!(!definition.encrypted);
+        assert!(definition.content.contains("©"));
+        assert!(definition.content.contains("@partition"));
+
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn backup_patches_are_reserved_slots() {
+        let game = unique_temp_dir("backup_reserve");
+        let runtime = game.join("Runtime");
+        let backup = game.join("Runtime_backup_original");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&backup).unwrap();
+
+        // バックアップに公式パッチ chunk0patch1 が存在
+        fs::write(backup.join("chunk0patch1.rpkg"), b"official").unwrap();
+
+        let pending = PendingRpkg {
+            original_name: "chunk0patch1.rpkg".to_string(),
+            data: vec![1, 2, 3],
+            size: 3,
+            chunk: 0,
+            requested_patch: 1,
+        };
+
+        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
+
+        // バックアップに公式パッチ chunk0patch1 が存在しても MOD_PATCH_START=100 から開始
+        assert_eq!(assigned[0].target_name, "chunk0patch100.rpkg");
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn backup_patches_skip_occupied_slots() {
+        let game = unique_temp_dir("backup_skip");
+        let runtime = game.join("Runtime");
+        let backup = game.join("Runtime_backup_original");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&backup).unwrap();
+
+        // バックアップに chunk1patch1, Runtime に chunk1patch2 が存在
+        fs::write(backup.join("chunk1patch1.rpkg"), b"official").unwrap();
+        fs::write(runtime.join("chunk1patch2.rpkg"), b"existing_mod").unwrap();
+
+        let pending = PendingRpkg {
+            original_name: "chunk1patch1.rpkg".to_string(),
+            data: vec![4, 5, 6],
+            size: 3,
+            chunk: 1,
+            requested_patch: 1,
+        };
+
+        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
+
+        // patch100 以降を割り当て (patch1 公式・patch2 既存MODは無関係)
+        assert_eq!(assigned[0].target_name, "chunk1patch100.rpkg");
+        fs::remove_dir_all(game).unwrap();
+    }
 }
