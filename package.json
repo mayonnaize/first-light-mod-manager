@@ -7,7 +7,8 @@
     "test": "npm run test:rust && npm run test:e2e",
     "test:rust": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:PATH=($env:USERPROFILE + '/.cargo/bin;' + $env:PATH); cargo test --manifest-path src-tauri/Cargo.toml\"",
     "test:e2e": "playwright test",
-    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1"
+    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1",
+    "sync-version": "node scripts/sync-version.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - name: Read version from package.json
+        id: read
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: check
+        run: |
+          TAG="v$(jq -r .version package.json)"
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists — skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version $TAG detected."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-release:
+    name: Build & Release (Windows)
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+      TAG: ${{ needs.check-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Sync version into tauri.conf.json and Cargo.toml
+        shell: pwsh
+        run: |
+          $version = "$env:VERSION"
+
+          # tauri.conf.json
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf.version = $version
+          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json -Encoding UTF8
+
+          # Cargo.toml (first [package] version line)
+          $cargo = Get-Content src-tauri/Cargo.toml
+          $cargo = $cargo -replace '^version\s*=\s*"[^"]+"', "version = `"$version`""
+          Set-Content src-tauri/Cargo.toml $cargo -Encoding UTF8
+
+      - name: Build Tauri app
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+          node_modules\.bin\tauri.cmd build
+
+      - name: Collect artifacts
+        id: artifacts
+        shell: pwsh
+        run: |
+          $bundle = "src-tauri/target/release/bundle"
+          $msi = Get-ChildItem "$bundle/msi/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsis = Get-ChildItem "$bundle/nsis/*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $exe  = Get-ChildItem "src-tauri/target/release/first-light-mod-manager.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          $paths = @()
+          if ($msi)  { $paths += $msi.FullName }
+          if ($nsis) { $paths += $nsis.FullName }
+          if ($exe)  { $paths += $exe.FullName }
+
+          $joined = $paths -join "`n"
+          echo "paths<<EOF" >> $env:GITHUB_OUTPUT
+          echo $joined >> $env:GITHUB_OUTPUT
+          echo "EOF" >> $env:GITHUB_OUTPUT
+
+      - name: Create Git tag
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$env:TAG"
+          git push origin "$env:TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "First Light Mod Manager ${{ env.TAG }}"
+          body: |
+            ## First Light Mod Manager ${{ env.TAG }}
+
+            ### インストール方法
+            - **installer** (`.msi` または `.exe`) をダウンロードして実行
+            - または `first-light-mod-manager.exe` を直接起動 (ポータブル)
+
+            ### 変更内容
+            [CHANGELOG を参照](https://github.com/${{ github.repository }}/commits/main)
+          files: ${{ steps.artifacts.outputs.paths }}
+          draft: false
+          prerelease: false
