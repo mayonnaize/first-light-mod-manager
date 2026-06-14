@@ -2,6 +2,36 @@
 
 > **007: First Light** 向けの軽量オープンソース Mod マネージャー
 
+---
+
+## Changes from upstream ([Welsker-dev/first-light-mod-manager](https://github.com/Welsker-dev/first-light-mod-manager))
+
+This fork contains the following fixes and enhancements on top of the original:
+
+### `src-tauri/src/commands.rs`
+
+- **Fixed XTEA keys and header** — Corrected the XTEA decryption keys and the 16-byte magic header constant to match the actual 007: First Light `packagedefinition.txt` format.
+- **Fixed `packagedefinition.txt` encoding** — Replaced strict `String::from_utf8` with Latin-1 (ISO 8859-1) fixed decoding. UTF-8 BOM (`EF BB BF`) is stripped before decoding.
+- **MOD patch number auto-assignment** — MOD `.rpkg` files are now assigned patch numbers starting at **100** (`MOD_PATCH_START = 100`) to avoid colliding with official game patches. Previously, chunk0 started at patch2 and other chunks at patch1.
+- **Backup-aware slot reservation** — `used_patch_slots` now also scans `Runtime_backup_original` to treat official patch slots as reserved, preventing overwrite on re-install.
+- **Rewrote backend from scratch** — The upstream `commands.rs` was a stub. This fork contains a full implementation: settings persistence, game auto-detection (Steam/Epic), mod install/uninstall/toggle/delete, ZIP package support, mod metadata, package definition patching, and Nexus Mods update check.
+- **9 unit tests added**
+
+### `src/main.js` / `src/index.html` / `src/styles.css`
+
+- Full frontend implementation (install wizard, mod list, settings, drag-and-drop, i18n EN/PT).
+
+### `scripts/tauri.ps1` / `tests/e2e/app.spec.js`
+
+- PowerShell build helper and Playwright E2E test suite added.
+
+### `README.md`
+
+- Rewritten in Japanese only.
+
+---
+
+
 ![License](https://img.shields.io/github/license/Welsker-dev/first-light-mod-manager)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-24C8D8)
