@@ -984,3 +984,9 @@ async function init() {
 }
 
 window.addEventListener('DOMContentLoaded', init);
+
+// ユニットテスト/E2Eテスト用の純粋関数のグローバル公開
+window.formatBytes = formatBytes;
+window.escapeHtml = escapeHtml;
+window.normalizeSettings = normalizeSettings;
+

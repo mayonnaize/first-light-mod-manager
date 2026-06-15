@@ -15,15 +15,15 @@ This fork contains the following fixes and enhancements on top of the original:
 - **MOD patch number auto-assignment** — MOD `.rpkg` files are now assigned patch numbers starting at **100** (`MOD_PATCH_START = 100`) to avoid colliding with official game patches. Previously, chunk0 started at patch2 and other chunks at patch1.
 - **Backup-aware slot reservation** — `used_patch_slots` now also scans `Runtime_backup_original` to treat official patch slots as reserved, preventing overwrite on re-install.
 - **Rewrote backend from scratch** — The upstream `commands.rs` was a stub. This fork contains a full implementation: settings persistence, game auto-detection (Steam/Epic), mod install/uninstall/toggle/delete, ZIP package support, mod metadata, package definition patching, and Nexus Mods update check.
-- **9 unit tests added**
+- **68 unit tests added** — Rust バックエンドの全主要関数をカバー (XTEA暗号・CRC32・パーサー・設定保存・ファイルシステム操作等)
 
-### `src/main.js` / `src/index.html` / `src/styles.css`
+### `tests/unit/utils.spec.js` (New)
 
-- Full frontend implementation (install wizard, mod list, settings, drag-and-drop, i18n EN/PT).
+- **20 JS ユニットテスト追加** — `formatBytes`, `escapeHtml`, `normalizeSettings` の純粋関数ロジックを境界値・エラー系も含めて検証
 
 ### `scripts/tauri.ps1` / `tests/e2e/app.spec.js`
 
-- PowerShell build helper and Playwright E2E test suite added.
+- PowerShell build helper and Playwright E2E test suite (47 tests) added.
 
 ### `README.md`
 
@@ -90,6 +90,13 @@ npm run tauri build
 ```
 
 `npm test` は Rust ユニットテストと Playwright E2E テストを実行します。Tauri スクリプトは Windows 上でデフォルトの Rust ツールチェーンパスを自動追加します。
+
+また、以下の方法でテストカバレッジを測定できます：
+
+- **Rust バックエンドカバレッジ**: `cargo llvm-cov` を用いて計測
+- **フロントエンドカバレッジ**: Playwright テスト実行時に `monocart-reporter` を介して自動計測 (結果は `test-results/coverage/` に出力)
+
+VS Code をご利用の場合は、`Ctrl+Shift+B` もしくは「タスクの実行」から `Coverage (Rust)` / `Coverage (JS/Frontend)` / `Coverage (All)` タスクを使用して、ワンクリックでカバレッジ測定からレポート表示まで行えます。
 
 ---
 

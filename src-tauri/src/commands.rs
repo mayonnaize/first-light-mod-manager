@@ -98,6 +98,7 @@ struct AssignedRpkg {
     target_patch: u32,
 }
 
+#[derive(Debug)]
 struct PackageDefinition {
     content: String,
     encrypted: bool,
@@ -1210,20 +1211,39 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("flmm_{name}_{suffix}"));
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    // テスト用一時ディレクトリ自動削除構造体
+    struct TempDir {
+        path: PathBuf,
     }
 
+    impl TempDir {
+        // 一時ディレクトリ作成
+        fn new(name: &str) -> Self {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("flmm_{name}_{suffix}"));
+            fs::create_dir_all(&path).unwrap();
+            TempDir { path }
+        }
+    }
+
+    impl Drop for TempDir {
+        // インスタンス破棄時の一時ディレクトリ再帰削除
+        fn drop(&mut self) {
+            if self.path.exists() {
+                let _ = fs::remove_dir_all(&self.path);
+            }
+        }
+    }
+
+    // ダミーパッケージ定義テキスト生成
     fn sample_packagedefinition() -> String {
         "// --- Chunk Boot + PlayGo\r\n@partition name=super parent=none type=standard patchlevel=0\r\n[assembly:/_glacier/ini/globalresources.ini].pc_resourceidx\r\n// --- Chunk Rest of missions\r\n@partition name=base parent=super type=standard patchlevel=0\r\n".to_string()
     }
 
+    // 暗号化パッケージ定義書き込み
     fn write_encrypted_packagedefinition(runtime: &Path, content: &str) {
         let definition = PackageDefinition {
             content: content.to_string(),
@@ -1234,8 +1254,8 @@ mod tests {
 
     #[test]
     fn refresh_package_definition_sets_patchlevel_and_preserves_crlf() {
-        let game = unique_temp_dir("pkg");
-        let runtime = game.join("Runtime");
+        let game = TempDir::new("pkg");
+        let runtime = game.path.join("Runtime");
         fs::create_dir_all(&runtime).unwrap();
         write_encrypted_packagedefinition(&runtime, &sample_packagedefinition());
         fs::write(runtime.join("chunk0patch2.rpkg"), b"dummy").unwrap();
@@ -1258,14 +1278,12 @@ mod tests {
                 .any(|window| window == b"\n")
                 || definition.content.contains("\r\n")
         );
-
-        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
     fn inactive_mods_lower_patchlevel_to_zero() {
-        let game = unique_temp_dir("toggle");
-        let runtime = game.join("Runtime");
+        let game = TempDir::new("toggle");
+        let runtime = game.path.join("Runtime");
         fs::create_dir_all(&runtime).unwrap();
         write_encrypted_packagedefinition(&runtime, &sample_packagedefinition());
         fs::write(runtime.join("chunk0patch2.rpkg.disabled"), b"dummy").unwrap();
@@ -1276,12 +1294,11 @@ mod tests {
         assert!(definition
             .content
             .contains("@partition name=super parent=none type=standard patchlevel=0"));
-        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
     fn assigns_mod_to_patch100_slot() {
-        let runtime = unique_temp_dir("assign");
+        let runtime = TempDir::new("assign");
         let pending = PendingRpkg {
             original_name: "chunk0patch1.rpkg".to_string(),
             data: vec![1, 2, 3],
@@ -1290,16 +1307,15 @@ mod tests {
             requested_patch: 1,
         };
 
-        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
+        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime.path)).unwrap();
 
         assert_eq!(assigned[0].target_name, "chunk0patch100.rpkg");
-        fs::remove_dir_all(runtime).unwrap();
     }
 
     #[test]
     fn inspect_zip_reports_ignored_packagedefinition() {
-        let root = unique_temp_dir("zip");
-        let zip_path = root.join("mod.zip");
+        let root = TempDir::new("zip");
+        let zip_path = root.path.join("mod.zip");
         let file = fs::File::create(&zip_path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default();
@@ -1312,7 +1328,7 @@ mod tests {
             .unwrap();
         zip.finish().unwrap();
 
-        let preview = inspect_mod_file(&zip_path, Some(&root)).unwrap();
+        let preview = inspect_mod_file(&zip_path, Some(&root.path)).unwrap();
 
         assert!(preview.installable);
         assert!(preview.has_packagedefinition);
@@ -1322,27 +1338,26 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("ignored")));
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn decode_to_string_is_latin1_fixed() {
-        // Latin-1 固定: 各バイトをそのまま Unicode コードポイントとして扱う
+        // ASCIIデコード動作検証
         let ascii = "hello".as_bytes().to_vec();
         assert_eq!(decode_to_string(ascii), "hello");
 
-        // 0xE9 = Latin-1 で 'é'
+        // Latin-1拡張文字デコード動作検証
         let latin1 = vec![0x68, 0x65, 0x6C, 0x6C, 0xE9];
         assert_eq!(decode_to_string(latin1), "hell\u{00e9}");
     }
 
     #[test]
     fn read_packagedefinition_strips_utf8_bom() {
-        let game = unique_temp_dir("bom");
-        let runtime = game.join("Runtime");
+        let game = TempDir::new("bom");
+        let runtime = game.path.join("Runtime");
         fs::create_dir_all(&runtime).unwrap();
 
-        // BOM + ASCII テキスト
+        // UTF-8 BOM付きテキストファイル書き込み
         let mut content = vec![0xEF, 0xBB, 0xBF];
         content.extend_from_slice(b"@partition name=super parent=none type=standard patchlevel=0\r\n");
         fs::write(runtime.join("packagedefinition.txt"), &content).unwrap();
@@ -1350,17 +1365,15 @@ mod tests {
         let definition = read_packagedefinition(&runtime).unwrap();
         assert!(!definition.encrypted);
         assert!(definition.content.starts_with("@partition"));
-
-        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
     fn read_packagedefinition_handles_latin1_content() {
-        let game = unique_temp_dir("latin1");
-        let runtime = game.join("Runtime");
+        let game = TempDir::new("latin1");
+        let runtime = game.path.join("Runtime");
         fs::create_dir_all(&runtime).unwrap();
 
-        // 0xA9 (©), 0xE9 (é) — Latin-1 で有効、UTF-8 では不正
+        // Latin-1エンコーディングデータ書き込み
         let content = b"// copyright \xA9 test\r\n@partition name=super parent=none type=standard patchlevel=0\r\n".to_vec();
         fs::write(runtime.join("packagedefinition.txt"), &content).unwrap();
 
@@ -1368,19 +1381,17 @@ mod tests {
         assert!(!definition.encrypted);
         assert!(definition.content.contains("©"));
         assert!(definition.content.contains("@partition"));
-
-        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
     fn backup_patches_are_reserved_slots() {
-        let game = unique_temp_dir("backup_reserve");
-        let runtime = game.join("Runtime");
-        let backup = game.join("Runtime_backup_original");
+        let game = TempDir::new("backup_reserve");
+        let runtime = game.path.join("Runtime");
+        let backup = game.path.join("Runtime_backup_original");
         fs::create_dir_all(&runtime).unwrap();
         fs::create_dir_all(&backup).unwrap();
 
-        // バックアップに公式パッチ chunk0patch1 が存在
+        // バックアップ領域への公式パッチ配置
         fs::write(backup.join("chunk0patch1.rpkg"), b"official").unwrap();
 
         let pending = PendingRpkg {
@@ -1393,20 +1404,19 @@ mod tests {
 
         let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
 
-        // バックアップに公式パッチ chunk0patch1 が存在しても MOD_PATCH_START=100 から開始
+        // MOD開始インデックス割り当て検証
         assert_eq!(assigned[0].target_name, "chunk0patch100.rpkg");
-        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
     fn backup_patches_skip_occupied_slots() {
-        let game = unique_temp_dir("backup_skip");
-        let runtime = game.join("Runtime");
-        let backup = game.join("Runtime_backup_original");
+        let game = TempDir::new("backup_skip");
+        let runtime = game.path.join("Runtime");
+        let backup = game.path.join("Runtime_backup_original");
         fs::create_dir_all(&runtime).unwrap();
         fs::create_dir_all(&backup).unwrap();
 
-        // バックアップに chunk1patch1, Runtime に chunk1patch2 が存在
+        // 各種状態のパッチファイル配置
         fs::write(backup.join("chunk1patch1.rpkg"), b"official").unwrap();
         fs::write(runtime.join("chunk1patch2.rpkg"), b"existing_mod").unwrap();
 
@@ -1420,8 +1430,715 @@ mod tests {
 
         let assigned = assign_rpkg_targets(vec![pending], Some(&runtime)).unwrap();
 
-        // patch100 以降を割り当て (patch1 公式・patch2 既存MODは無関係)
+        // 開始インデックス以降の割り当て検証
         assert_eq!(assigned[0].target_name, "chunk1patch100.rpkg");
-        fs::remove_dir_all(game).unwrap();
     }
+
+    // ─── parse_patch_file_name ────────────────────────────────────────
+
+    #[test]
+    fn parse_patch_file_name_active_rpkg() {
+        // 有効パッチ名パース
+        let result = parse_patch_file_name("chunk0patch2.rpkg");
+        assert_eq!(result, Some((0, 2, true)));
+    }
+
+    #[test]
+    fn parse_patch_file_name_disabled_rpkg() {
+        // 無効化パッチ名パース
+        let result = parse_patch_file_name("chunk1patch100.rpkg.disabled");
+        assert_eq!(result, Some((1, 100, false)));
+    }
+
+    #[test]
+    fn parse_patch_file_name_case_insensitive() {
+        // 大文字小文字混在パッチ名パース
+        let result = parse_patch_file_name("Chunk2Patch5.RPKG");
+        assert_eq!(result, Some((2, 5, true)));
+    }
+
+    #[test]
+    fn parse_patch_file_name_non_rpkg_returns_none() {
+        // 非対象ファイル名のパース除外
+        assert_eq!(parse_patch_file_name("packagedefinition.txt"), None);
+        assert_eq!(parse_patch_file_name("mod.json"), None);
+        assert_eq!(parse_patch_file_name("chunk0.rpkg"), None);
+    }
+
+    #[test]
+    fn parse_patch_file_name_large_numbers() {
+        // 大きな値のパッチ名パース
+        let result = parse_patch_file_name("chunk99patch9999.rpkg");
+        assert_eq!(result, Some((99, 9999, true)));
+    }
+
+    // ─── set_patchlevel_in_line ──────────────────────────────────────
+
+    #[test]
+    fn set_patchlevel_in_line_replaces_existing_value() {
+        // 既存値の置換
+        let line = "@partition name=super parent=none type=standard patchlevel=0";
+        let result = set_patchlevel_in_line(line, 100);
+        assert!(result.contains("patchlevel=100"));
+        assert!(!result.contains("patchlevel=0 ") && !result.ends_with("patchlevel=0"));
+    }
+
+    #[test]
+    fn set_patchlevel_in_line_appends_when_missing() {
+        // キー未存在時の追記
+        let line = "@partition name=base parent=super type=standard";
+        let result = set_patchlevel_in_line(line, 50);
+        assert!(result.contains("patchlevel=50"));
+    }
+
+    #[test]
+    fn set_patchlevel_in_line_preserves_surrounding_content() {
+        // 周辺パラメーター保持
+        let line = "@partition name=x patchlevel=5 extra=value";
+        let result = set_patchlevel_in_line(line, 200);
+        assert!(result.contains("extra=value"));
+        assert!(result.contains("patchlevel=200"));
+    }
+
+    // ─── detect_line_ending ──────────────────────────────────────────
+
+    #[test]
+    fn detect_line_ending_crlf() {
+        // CRLF改行検出
+        assert_eq!(detect_line_ending("line1\r\nline2\r\n"), "\r\n");
+    }
+
+    #[test]
+    fn detect_line_ending_lf_only() {
+        // LF改行検出
+        assert_eq!(detect_line_ending("line1\nline2\n"), "\n");
+    }
+
+    #[test]
+    fn detect_line_ending_no_newline() {
+        // 改行なし時のデフォルトLF返却
+        assert_eq!(detect_line_ending("single line"), "\n");
+    }
+
+    // ─── apply_patchlevels ───────────────────────────────────────────
+
+    #[test]
+    fn apply_patchlevels_updates_correct_partition() {
+        // 特定パーティションパッチ更新
+        let content = "@partition name=boot patchlevel=0\n@partition name=main patchlevel=0\n";
+        let mut levels = HashMap::new();
+        levels.insert(1, 100u32);
+        let result = apply_patchlevels(content, &levels).unwrap();
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines[0].contains("patchlevel=0"));
+        assert!(lines[1].contains("patchlevel=100"));
+    }
+
+    #[test]
+    fn apply_patchlevels_error_on_missing_partition() {
+        // パーティション未存在時エラー
+        let content = "@partition name=boot patchlevel=0\n";
+        let mut levels = HashMap::new();
+        levels.insert(5, 100u32);
+        let result = apply_patchlevels(content, &levels);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("chunk5"));
+    }
+
+    #[test]
+    fn apply_patchlevels_preserves_crlf_trailing_newline() {
+        // 末尾改行コード維持
+        let content = "@partition name=boot patchlevel=0\r\n";
+        let levels = HashMap::new();
+        let result = apply_patchlevels(content, &levels).unwrap();
+        assert!(result.ends_with("\r\n"));
+    }
+
+    // ─── crc32_ieee ──────────────────────────────────────────────────
+
+    #[test]
+    fn crc32_ieee_known_values() {
+        // IEEE標準チェックサム検証
+        let crc = crc32_ieee(b"123456789");
+        assert_eq!(crc, 0xCBF43926);
+    }
+
+    #[test]
+    fn crc32_ieee_empty_input() {
+        // 空バッファ時のゼロ値
+        assert_eq!(crc32_ieee(b""), 0x00000000);
+    }
+
+    #[test]
+    fn crc32_ieee_single_byte() {
+        // 単一バイトハッシュ
+        let crc = crc32_ieee(&[0x00]);
+        assert_eq!(crc, 0xD202EF8D);
+    }
+
+    // ─── encrypt / decrypt 往復テスト ─────────────────────────────────
+
+    #[test]
+    fn encrypt_decrypt_roundtrip_ascii() {
+        // 暗号化/復号往復一致検証
+        let original = b"Hello, World!!! Test data here.";
+        let encrypted = encrypt_buffer(original);
+        let decrypted = decrypt_buffer(&encrypted);
+        assert_eq!(decrypted, original);
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip_with_padding() {
+        // パディングブロック往復一致検証
+        let original = b"abc";
+        let encrypted = encrypt_buffer(original);
+        let decrypted = decrypt_buffer(&encrypted);
+        assert_eq!(decrypted, original);
+    }
+
+    #[test]
+    fn encrypt_buffer_output_is_multiple_of_8() {
+        // ブロック境界出力サイズ検証
+        for len in 1..=20usize {
+            let data: Vec<u8> = (0..len as u8).collect();
+            let enc = encrypt_buffer(&data);
+            assert_eq!(enc.len() % 8, 0, "len={len} encrypted to {} bytes", enc.len());
+        }
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip_packagedefinition_content() {
+        // 構造定義データ暗号往復
+        let content = "@partition name=super parent=none type=standard patchlevel=100\r\n\
+                       @partition name=base parent=super type=standard patchlevel=0\r\n";
+        let original = content.as_bytes();
+        let encrypted = encrypt_buffer(original);
+        let decrypted = decrypt_buffer(&encrypted);
+        assert_eq!(decrypted, original);
+    }
+
+    // ─── XTEA ブロック暗号単体 ───────────────────────────────────────
+
+    #[test]
+    fn xtea_block_encrypt_decrypt_roundtrip() {
+        // ブロック単位暗号化往復
+        let original_a: u32 = 0xDEADBEEF;
+        let original_b: u32 = 0xCAFEBABE;
+        let mut a = original_a;
+        let mut b = original_b;
+        encrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        assert_ne!(a, original_a);
+        decrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        assert_eq!(a, original_a);
+        assert_eq!(b, original_b);
+    }
+
+    #[test]
+    fn xtea_block_zero_block() {
+        // ゼロブロック暗号化往復
+        let mut a = 0u32;
+        let mut b = 0u32;
+        encrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        assert_ne!((a, b), (0, 0));
+        decrypt_block_xtea(&mut a, &mut b, &XTEA_KEYS);
+        assert_eq!((a, b), (0, 0));
+    }
+
+    // ─── normalize_game_path ────────────────────────────────────────
+
+    #[test]
+    fn normalize_game_path_accepts_game_dir_with_runtime_and_exe() {
+        let game = TempDir::new("norm_game");
+        let runtime = game.path.join("Runtime");
+        let retail = game.path.join("Retail");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&retail).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"dummy").unwrap();
+
+        let result = normalize_game_path(game.path.to_str().unwrap());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn normalize_game_path_accepts_runtime_subdirectory() {
+        let game = TempDir::new("norm_runtime");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"dummy").unwrap();
+
+        let result = normalize_game_path(runtime.to_str().unwrap());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), game.path);
+    }
+
+    #[test]
+    fn normalize_game_path_rejects_empty_string() {
+        // 空パスの除外
+        let result = normalize_game_path("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn normalize_game_path_rejects_invalid_dir() {
+        // 実在しないパスの除外
+        let result = normalize_game_path("C:\\NotExistingDirectory\\FakeGame");
+        assert!(result.is_err());
+    }
+
+    // ─── patchlevels_by_partition ────────────────────────────────────
+
+    #[test]
+    fn patchlevels_by_partition_ignores_disabled_mods() {
+        let runtime = TempDir::new("pbl_disabled");
+        fs::write(runtime.path.join("chunk0patch100.rpkg"), b"active").unwrap();
+        fs::write(runtime.path.join("chunk0patch101.rpkg.disabled"), b"disabled").unwrap();
+
+        let result = patchlevels_by_partition(&runtime.path).unwrap();
+        assert_eq!(result.get(&0), Some(&100));
+    }
+
+    #[test]
+    fn patchlevels_by_partition_picks_max_active_patch() {
+        let runtime = TempDir::new("pbl_max");
+        fs::write(runtime.path.join("chunk0patch100.rpkg"), b"a").unwrap();
+        fs::write(runtime.path.join("chunk0patch105.rpkg"), b"b").unwrap();
+        fs::write(runtime.path.join("chunk0patch102.rpkg"), b"c").unwrap();
+
+        let result = patchlevels_by_partition(&runtime.path).unwrap();
+        assert_eq!(result.get(&0), Some(&105));
+    }
+
+    #[test]
+    fn patchlevels_by_partition_empty_runtime() {
+        let runtime = TempDir::new("pbl_empty");
+        let result = patchlevels_by_partition(&runtime.path).unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ─── metadata_from_json ─────────────────────────────────────────
+
+    #[test]
+    fn metadata_from_json_parses_all_fields() {
+        // JSONメタデータパース
+        let json = r#"{"name":"Test Mod","author":"Tester","description":"A test mod","version":"2.0.0"}"#;
+        let meta = metadata_from_json(json);
+        assert_eq!(meta.name, "Test Mod");
+        assert_eq!(meta.author, "Tester");
+        assert_eq!(meta.description, "A test mod");
+        assert_eq!(meta.version, "2.0.0");
+    }
+
+    #[test]
+    fn metadata_from_json_partial_fields() {
+        // 部分的なJSONメタデータパース
+        let json = r#"{"name":"Only Name"}"#;
+        let meta = metadata_from_json(json);
+        assert_eq!(meta.name, "Only Name");
+        assert_eq!(meta.author, "");
+        assert_eq!(meta.version, "");
+    }
+
+    #[test]
+    fn metadata_from_json_invalid_json_returns_default() {
+        // 不正JSONパース失敗時のデフォルトフォールバック
+        let meta = metadata_from_json("{not valid json}");
+        assert_eq!(meta.name, "");
+        assert_eq!(meta.author, "");
+    }
+
+    #[test]
+    fn metadata_from_json_empty_string_returns_default() {
+        // 空文字パース失敗時のデフォルトフォールバック
+        let meta = metadata_from_json("");
+        assert_eq!(meta.name, "");
+    }
+
+    // ─── extract_json_field ─────────────────────────────────────────
+
+    #[test]
+    fn extract_json_field_returns_existing_string() {
+        // 特定キーの値取得
+        let json = r#"{"InstallLocation":"C:\\Games\\007 First Light","AppId":"007"}"#;
+        let result = extract_json_field(json, "InstallLocation");
+        assert_eq!(result, Some("C:\\Games\\007 First Light".to_string()));
+    }
+
+    #[test]
+    fn extract_json_field_returns_none_for_missing_key() {
+        // 未存在キーのNone取得
+        let json = r#"{"AppId":"007"}"#;
+        let result = extract_json_field(json, "InstallLocation");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_json_field_returns_none_for_non_string_value() {
+        // 非文字列型キーのNone取得
+        let json = r#"{"count":42}"#;
+        let result = extract_json_field(json, "count");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_json_field_invalid_json_returns_none() {
+        // 不正JSONパース失敗
+        let result = extract_json_field("not json at all", "field");
+        assert_eq!(result, None);
+    }
+
+    // ─── localized ──────────────────────────────────────────────────
+
+    #[test]
+    fn localized_pt_returns_portuguese() {
+        // ポルトガル語選択
+        let result = localized(true, "Instalado com sucesso!", "Installed successfully!");
+        assert_eq!(result, "Instalado com sucesso!");
+    }
+
+    #[test]
+    fn localized_en_returns_english() {
+        // 英語選択
+        let result = localized(false, "Instalado com sucesso!", "Installed successfully!");
+        assert_eq!(result, "Installed successfully!");
+    }
+
+    // ─── get_steam_library_paths ─────────────────────────────────────
+
+    #[test]
+    fn get_steam_library_paths_includes_steam_root() {
+        // Steamインストール親ディレクトリの取得確認
+        let paths = get_steam_library_paths("C:\\Steam");
+        assert!(!paths.is_empty());
+        assert_eq!(paths[0], "C:\\Steam");
+    }
+
+    #[test]
+    fn get_steam_library_paths_parses_vdf_path_field() {
+        let dir = TempDir::new("steam_vdf");
+        let steam_path = dir.path.to_str().unwrap().to_string();
+        let steamapps = dir.path.join("steamapps");
+        fs::create_dir_all(&steamapps).unwrap();
+
+        let vdf_content = "\"LibraryFolders\"\n{\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"D:\\\\SteamLibrary\"\n\t}\n}\n";
+        fs::write(steamapps.join("libraryfolders.vdf"), vdf_content).unwrap();
+
+        let paths = get_steam_library_paths(&steam_path);
+        assert!(paths.len() >= 2);
+        let found = paths.iter().any(|p| p.contains("SteamLibrary"));
+        assert!(found, "VDF path was not extracted: {:?}", paths);
+    }
+
+    // ─── write_packagedefinition / read_packagedefinition 往復 ─────
+
+    #[test]
+    fn write_read_packagedefinition_plaintext_roundtrip() {
+        let game = TempDir::new("rw_plain");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        let content = "@partition name=boot patchlevel=0\n@partition name=main patchlevel=0\n";
+        let definition = PackageDefinition {
+            content: content.to_string(),
+            encrypted: false,
+        };
+        write_packagedefinition(&runtime, &definition).unwrap();
+        let read_back = read_packagedefinition(&runtime).unwrap();
+
+        assert!(!read_back.encrypted);
+        assert_eq!(read_back.content, content);
+    }
+
+    #[test]
+    fn write_read_packagedefinition_encrypted_roundtrip() {
+        let game = TempDir::new("rw_enc");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        let content = "@partition name=boot patchlevel=100\r\n@partition name=main patchlevel=0\r\n";
+        let definition = PackageDefinition {
+            content: content.to_string(),
+            encrypted: true,
+        };
+        write_packagedefinition(&runtime, &definition).unwrap();
+        let read_back = read_packagedefinition(&runtime).unwrap();
+
+        assert!(read_back.encrypted);
+        assert_eq!(read_back.content, content);
+    }
+
+    #[test]
+    fn read_packagedefinition_detects_checksum_mismatch() {
+        let game = TempDir::new("crc_mismatch");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        let content = "test content here";
+        let definition = PackageDefinition {
+            content: content.to_string(),
+            encrypted: true,
+        };
+        write_packagedefinition(&runtime, &definition).unwrap();
+
+        let pkg_path = runtime.join("packagedefinition.txt");
+        let mut raw = fs::read(&pkg_path).unwrap();
+        raw[16] ^= 0xFF;
+        fs::write(&pkg_path, &raw).unwrap();
+
+        let result = read_packagedefinition(&runtime);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("checksum"));
+    }
+
+    // ─── assign_rpkg_targets (複数 pending) ─────────────────────────
+
+    #[test]
+    fn assign_rpkg_targets_multiple_chunks_no_collision() {
+        let runtime = TempDir::new("multi_chunk");
+        let pending = vec![
+            PendingRpkg {
+                original_name: "chunk0patch1.rpkg".to_string(),
+                data: vec![1],
+                size: 1,
+                chunk: 0,
+                requested_patch: 1,
+            },
+            PendingRpkg {
+                original_name: "chunk1patch1.rpkg".to_string(),
+                data: vec![2],
+                size: 1,
+                chunk: 1,
+                requested_patch: 1,
+            },
+        ];
+
+        let assigned = assign_rpkg_targets(pending, Some(&runtime.path)).unwrap();
+        assert_eq!(assigned.len(), 2);
+        assert_eq!(assigned[0].target_patch, 100);
+        assert_eq!(assigned[1].target_patch, 100);
+    }
+
+    #[test]
+    fn assign_rpkg_targets_same_chunk_sequential_slots() {
+        let runtime = TempDir::new("same_chunk_seq");
+        let pending = vec![
+            PendingRpkg {
+                original_name: "chunk0patch1.rpkg".to_string(),
+                data: vec![1],
+                size: 1,
+                chunk: 0,
+                requested_patch: 1,
+            },
+            PendingRpkg {
+                original_name: "chunk0patch2.rpkg".to_string(),
+                data: vec![2],
+                size: 1,
+                chunk: 0,
+                requested_patch: 2,
+            },
+        ];
+
+        let assigned = assign_rpkg_targets(pending, Some(&runtime.path)).unwrap();
+        assert_eq!(assigned[0].target_patch, 100);
+        assert_eq!(assigned[1].target_patch, 101);
+    }
+
+    #[test]
+    fn assign_rpkg_targets_skips_occupied_slots_sequentially() {
+        let runtime = TempDir::new("skip_seq");
+        fs::write(runtime.path.join("chunk0patch100.rpkg"), b"a").unwrap();
+        fs::write(runtime.path.join("chunk0patch101.rpkg"), b"b").unwrap();
+
+        let pending = PendingRpkg {
+            original_name: "chunk0patch1.rpkg".to_string(),
+            data: vec![3],
+            size: 1,
+            chunk: 0,
+            requested_patch: 1,
+        };
+
+        let assigned = assign_rpkg_targets(vec![pending], Some(&runtime.path)).unwrap();
+        assert_eq!(assigned[0].target_patch, 102);
+    }
+
+    // ─── used_patch_slots ────────────────────────────────────────────
+
+    #[test]
+    fn used_patch_slots_with_no_runtime_returns_empty() {
+        let slots = used_patch_slots(None).unwrap();
+        assert!(slots.is_empty());
+    }
+
+    #[test]
+    fn used_patch_slots_includes_active_and_disabled_rpkg() {
+        let runtime = TempDir::new("slots_mixed");
+        fs::write(runtime.path.join("chunk0patch100.rpkg"), b"a").unwrap();
+        fs::write(runtime.path.join("chunk1patch101.rpkg.disabled"), b"b").unwrap();
+
+        let slots = used_patch_slots(Some(&runtime.path)).unwrap();
+        assert!(slots.contains(&(0, 100)));
+        assert!(slots.contains(&(1, 101)));
+    }
+
+    #[test]
+    fn used_patch_slots_backup_dir_slots_are_reserved() {
+        let game = TempDir::new("slots_backup");
+        let runtime = game.path.join("Runtime");
+        let backup = game.path.join("Runtime_backup_original");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&backup).unwrap();
+
+        fs::write(backup.join("chunk0patch1.rpkg"), b"official").unwrap();
+
+        let slots = used_patch_slots(Some(&runtime)).unwrap();
+        assert!(slots.contains(&(0, 1)));
+    }
+
+    // ─── target_patch_start ─────────────────────────────────────────
+
+    #[test]
+    fn target_patch_start_always_returns_mod_patch_start() {
+        // MOD開始インデックス初期値取得
+        assert_eq!(target_patch_start(0), 100);
+        assert_eq!(target_patch_start(1), 100);
+        assert_eq!(target_patch_start(99), 100);
+    }
+
+    // ─── current_patchlevels ─────────────────────────────────────────
+
+    #[test]
+    fn current_patchlevels_empty_runtime_returns_empty() {
+        let runtime = TempDir::new("cpatch_empty");
+        let result = current_patchlevels(&runtime.path);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn current_patchlevels_parses_packagedefinition_patchlevels() {
+        let runtime = TempDir::new("cpatch_vals");
+
+        let pkg_def_content = "\
+@partition0 patchlevel=103
+@partition1 patchlevel=100
+";
+        fs::write(runtime.path.join("packagedefinition.txt"), pkg_def_content).unwrap();
+
+        let result = current_patchlevels(&runtime.path);
+
+        assert_eq!(result.get(&0), Some(&103));
+        assert_eq!(result.get(&1), Some(&100));
+    }
+
+    #[tokio::test]
+    async fn test_delete_backup() {
+        let game = TempDir::new("del_backup");
+        let runtime = game.path.join("Runtime");
+        let backup = game.path.join("Runtime_backup_original");
+
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&backup).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"").unwrap();
+
+        let result = delete_backup(game.path.to_string_lossy().to_string()).await;
+        assert!(result.is_ok());
+        assert!(!backup.exists());
+    }
+
+    #[tokio::test]
+    async fn test_list_mods() {
+        let game = TempDir::new("list_mods");
+        let runtime = game.path.join("Runtime");
+
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"").unwrap();
+
+        let pkg_def_content = "@partition0 patchlevel=100\n";
+        fs::write(runtime.join("packagedefinition.txt"), pkg_def_content).unwrap();
+        fs::write(runtime.join("chunk0patch100.rpkg"), b"data").unwrap();
+
+        let metadata_content = r#"{"name":"Test Mod Name","author":"Author Name","description":"Desc","version":"1.0","original_filename":"chunk0patch100.rpkg","installed_filename":"chunk0patch100.rpkg","source_package":"","installed_at":""}"#;
+        fs::write(runtime.join("chunk0patch100.metadata.json"), metadata_content).unwrap();
+
+        let mods = list_mods(game.path.to_string_lossy().to_string()).await.unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Test Mod Name");
+        assert_eq!(mods[0].author, "Author Name");
+        assert!(mods[0].active);
+    }
+
+    #[tokio::test]
+    async fn test_toggle_mod_and_delete_mod() {
+        let game = TempDir::new("toggle_and_del");
+        let runtime = game.path.join("Runtime");
+
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"").unwrap();
+
+        let pkg_def_content = "@partition0 patchlevel=0\n";
+        fs::write(runtime.join("packagedefinition.txt"), pkg_def_content).unwrap();
+
+        let active_path = runtime.join("chunk0patch100.rpkg");
+        fs::write(&active_path, b"data").unwrap();
+
+        let result = toggle_mod(game.path.to_string_lossy().to_string(), "chunk0patch100".to_string(), false).await;
+        assert!(result.is_ok());
+        assert!(!active_path.exists());
+        let disabled_path = runtime.join("chunk0patch100.rpkg.disabled");
+        assert!(disabled_path.exists());
+
+        let result = toggle_mod(game.path.to_string_lossy().to_string(), "chunk0patch100".to_string(), true).await;
+        assert!(result.is_ok());
+        assert!(active_path.exists());
+        assert!(!disabled_path.exists());
+
+        let result = delete_mod(game.path.to_string_lossy().to_string(), "chunk0patch100".to_string()).await;
+        assert!(result.is_ok());
+        assert!(!active_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_open_game_folder_invalid_path() {
+        let result = open_game_folder("invalid_path_xyz".to_string()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_and_save_settings() {
+        let temp_dir = TempDir::new("settings_test");
+
+        // テスト用環境変数の設定
+        #[cfg(target_os = "windows")]
+        std::env::set_var("APPDATA", &temp_dir.path);
+        #[cfg(not(target_os = "windows"))]
+        std::env::set_var("HOME", &temp_dir.path);
+
+        // デフォルト設定ロード検証
+        let loaded = load_settings().await.unwrap();
+        assert_eq!(loaded.language, "en");
+        assert_eq!(loaded.nexus_mod_id, "0");
+        assert!(loaded.auto_check_updates);
+
+        // 設定の保存検証
+        let to_save = AppSettings {
+            game_path: "".to_string(),
+            language: "pt".to_string(),
+            nexus_api_key: "my_api_key".to_string(),
+            nexus_mod_id: "999".to_string(),
+            auto_check_updates: false,
+        };
+        let saved = save_settings(to_save).await.unwrap();
+        assert_eq!(saved.language, "pt");
+        assert_eq!(saved.nexus_api_key, "my_api_key");
+        assert_eq!(saved.nexus_mod_id, "999");
+        assert!(!saved.auto_check_updates);
+
+        // 設定のロード再検証
+        let loaded2 = load_settings().await.unwrap();
+        assert_eq!(loaded2.language, "pt");
+        assert_eq!(loaded2.nexus_api_key, "my_api_key");
+        assert_eq!(loaded2.nexus_mod_id, "999");
+        assert!(!loaded2.auto_check_updates);
+    }
+
 }
+
