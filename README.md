@@ -16,8 +16,7 @@ This fork resolves critical bugs from the original version and introduces new fe
   * Installed mods are automatically assigned patch numbers starting from 100. This prevents them from conflicting with official game updates or overwriting other mods.
 * **Reliable Drag & Drop Installation**:
   * Fixed the bug where dragging and dropping `.zip` or `.rpkg` mod files into the window would fail. Installation is now smooth and reliable.
-* **Auto-Check for Mod Updates**:
-  * Integrated Nexus Mods API support, allowing the manager to automatically check if new versions of your installed mods are available.
+
 * **Remember Settings**:
   * Your language settings (English/Portuguese) and selected game folder are automatically saved when you close the app.
 * **Fast, Minimal Backup**:

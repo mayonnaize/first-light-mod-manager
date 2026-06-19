@@ -68,9 +68,7 @@ async function installTauriMock(page, options = {}) {
   const initialSettings = {
     game_path: 'E:\\SteamLibrary\\steamapps\\common\\007 First Light',
     language: 'en',
-    nexus_api_key: '',
-    nexus_mod_id: '0',
-    auto_check_updates: false,
+
     ...(options.initialSettings || {})
   };
 
@@ -140,8 +138,7 @@ async function installTauriMock(page, options = {}) {
             case 'delete_backup':
               backupExists = false;
               return null;
-            case 'check_updates':
-              return checkUpdatesResponse || { version: '0.2.0', url: '', has_update: false };
+
             case 'open_game_folder':
             case 'install_mod':
             case 'uninstall_mod':
@@ -160,6 +157,10 @@ async function installTauriMock(page, options = {}) {
             throw new Error('Mock error for command: dialog.open');
           }
           return args.directory ? selectedDirectory : selectedFile;
+        },
+        confirm: async (message) => {
+          window.__testCalls.push({ command: 'dialog.confirm', args: { message } });
+          return window.confirm(message);
         }
       },
       opener: {
@@ -355,7 +356,7 @@ test('clear file button hides preview and resets selected file state', async ({ 
 
 test('install button is disabled without both game path and mod file', async ({ page }) => {
   // ゲームパスなしの設定
-  await installTauriMock(page, { initialSettings: { game_path: '', language: 'en', nexus_api_key: '', nexus_mod_id: '0', auto_check_updates: false } });
+  await installTauriMock(page, { initialSettings: { game_path: '', language: 'en' } });
   await page.goto(baseUrl);
 
   await page.locator('#nav-install').click();
@@ -399,31 +400,7 @@ test('uninstallMod: uninstalls mods and restores backup', async ({ page }) => {
   expect(uninstallCall).toBeDefined();
 });
 
-test('checkUpdates: displays update banner if new version is found', async ({ page }) => {
-  page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-  await installTauriMock(page, {
-    initialSettings: { nexus_mod_id: '123' },
-    checkUpdatesResponse: { version: '0.2.0', url: 'https://example.com', has_update: true }
-  });
-  await page.goto(baseUrl);
 
-  // 設定画面へ遷移
-  await page.locator('#nav-settings').click();
-  // Mod ID を直接入力
-  await page.locator('#input-mod-id').fill('123');
-  // アップデートチェック実行
-  await page.locator('#btn-check-now').click();
-  await waitForTestCall(page, 'check_updates');
-
-  // ホームタブへの遷移によるバナーの表示状態確保
-  await page.locator('#nav-home').click();
-
-  const calls = await page.evaluate(() => window.__testCalls);
-  console.log("TEST CALLS IN BROWSER:", JSON.stringify(calls, null, 2));
-
-  // アップデートバナー表示検証
-  await expect(page.locator('#update-banner')).toBeVisible();
-});
 
 test('deleteMod: deleting mod triggers delete_mod IPC call', async ({ page }) => {
   await installTauriMock(page);
@@ -642,37 +619,7 @@ test('toast: removes toast element after fadeout animation', async ({ page }) =>
   await expect(toastEl).toHaveCount(0);
 });
 
-test('openLink: falls back to window.open when tauri openUrl fails', async ({ page }) => {
-  // tauri openUrl失敗時のwindow.openフォールバック検証
-  await installTauriMock(page, {
-    initialSettings: { nexus_mod_id: '123' },
-    checkUpdatesResponse: { version: '0.2.0', url: 'https://example.com', has_update: true },
-    mockFailures: { opener_openUrl: true }
-  });
-  await page.goto(baseUrl);
-  
-  // window.openのスパイ化
-  await page.evaluate(() => {
-    window.__testCalls = window.__testCalls || [];
-    window.open = (url) => {
-      window.__testCalls.push({ command: 'window.open', args: { url } });
-      return null;
-    };
-  });
 
-  await page.locator('#nav-settings').click();
-  await page.locator('#btn-check-now').click();
-  await waitForTestCall(page, 'check_updates');
-  await page.locator('#nav-home').click();
-  
-  await page.locator('#btn-download-update').click();
-  await waitForTestCall(page, 'window.open');
-
-  const calls = await page.evaluate(() => window.__testCalls);
-  const openCall = calls.find(c => c.command === 'window.open');
-  expect(openCall).toBeDefined();
-  expect(openCall.args.url).toContain('123');
-});
 
 test('renderModPreview: displays placeholder on empty mod rpkg list', async ({ page }) => {
   // RPKGファイルがない場合のプレビュー表示検証
@@ -788,16 +735,7 @@ test('saveSettings: saves with empty game path', async ({ page }) => {
   await expect(page.locator('#toast-container')).toContainText('Settings saved!');
 });
 
-test('checkUpdates: toast when mod ID is not configured', async ({ page }) => {
-  // Mod ID未設定時の更新チェック時の情報トースト検証
-  await installTauriMock(page, {
-    initialSettings: { nexus_mod_id: '0' }
-  });
-  await page.goto(baseUrl);
-  await page.locator('#nav-settings').click();
-  await page.locator('#btn-check-now').click();
-  await expect(page.locator('#toast-container')).toContainText('Updates check disabled');
-});
+
 
 test('dragzone: dragover and dragleave styles', async ({ page }) => {
   // ドラッグオーバーとドラッグリーブのスタイルの検証
@@ -936,26 +874,6 @@ test('navigation: clicks footer and about links', async ({ page }) => {
   await page.locator('#abt-nexus').click();
 });
 
-test('checkUpdates: handles error when check_updates fails', async ({ page }) => {
-  // check_updatesコマンド失敗時のエラー表示の検証
-  await installTauriMock(page, {
-    initialSettings: { nexus_mod_id: '123' },
-    mockFailures: { check_updates: true }
-  });
-  await page.goto(baseUrl);
-  await page.locator('#nav-settings').click();
-  await page.locator('#btn-check-now').click();
-  await expect(page.locator('#toast-container')).toContainText('Could not check for updates:');
-});
 
-test('init: automatically checks for updates on startup if enabled', async ({ page }) => {
-  // 起動時の自動アップデートチェック挙動の検証
-  await installTauriMock(page, {
-    initialSettings: { nexus_mod_id: '123', auto_check_updates: true },
-    checkUpdatesResponse: { version: '0.2.0', url: 'https://example.com', has_update: true }
-  });
-  await page.goto(baseUrl);
-  await expect(page.locator('#update-banner')).toBeVisible();
-});
 
 

@@ -14,7 +14,7 @@ The application is built using **Tauri** (v2), which combines a web frontend wit
 - **Role:** Handles UI, user interaction, and presentation. Communicates entirely with the backend using Tauri's IPC `invoke()` mechanism.
 
 ### 2.2 Backend
-- **Stack:** Rust (located in `src-tauri/src/`). Main logic resides in `commands.rs`.
+- **Stack:** Rust (located in `src-tauri/src/`). Main logic resides in modular submodules (`settings.rs`, `crypto.rs`, `backup.rs`, `game_detect.rs`, and `mod_manager.rs`), with `commands.rs` acting as the Tauri IPC router.
 - **Role:** Handles OS-level interactions:
   - Game path auto-detection (Steam/Epic via Windows Registry using `winreg`).
   - File management (extracting `.zip`, copying `.rpkg`).
@@ -22,9 +22,9 @@ The application is built using **Tauri** (v2), which combines a web frontend wit
 - **Patch Numbering:** Mod patch numbers are automatically assigned starting at **100** to avoid colliding with official patches.
 
 ## 3. Testing & Workflows
-- **Unit Tests (Backend):** Rust unit tests are located in `src-tauri/src/` (within `commands.rs`). Run via `npm run test:rust`. **77 tests** covering XTEA crypto, CRC32, path normalization, patchlevel logic, metadata parsing, VDF parsing, settings persistence, backup/restore/migration, etc. Coverage is measured via `cargo llvm-cov`.
-- **Unit Tests (Frontend):** Pure-function JS unit tests located in `tests/unit/`. Run via `npm run test:e2e` (with single worker). **20 tests** for `formatBytes`, `escapeHtml`, `normalizeSettings` executing in the browser page context to test real code.
-- **E2E Tests (Frontend):** Playwright is used for End-to-End testing, located in `tests/e2e/`. Run via `npm run test:e2e`. **47 tests** covering navigation, mod install flow, toggle/delete, language switching, settings persistence, update checking, etc. V8 coverage is measured via Playwright E2E/unit tests using `monocart-reporter` (reports output to `test-results/coverage/`).
+- **Unit Tests (Backend):** Rust unit tests are located in the modular files under `src-tauri/src/`. Run via `npm run test:rust`. Covers XTEA crypto, CRC32, path normalization, patchlevel logic, metadata parsing, settings persistence, backup/restore/migration, etc. Coverage is measured via `cargo llvm-cov`.
+- **Unit Tests (Frontend):** Pure-function JS unit tests located in `tests/unit/`. Run via `npm run test:e2e` (with single worker). Tests for `formatBytes`, `escapeHtml`, `normalizeSettings` executing in the browser page context to test real code.
+- **E2E Tests (Frontend):** Playwright is used for End-to-End testing, located in `tests/e2e/`. Run via `npm run test:e2e`. Covers navigation, mod install flow, toggle/delete, language switching, settings persistence, etc. V8 coverage is measured via Playwright E2E/unit tests using `monocart-reporter` (reports output to `test-results/coverage/`).
 - **Combined Test Command:** `npm test` runs both Rust and E2E tests.
 - **Building:** Run `npm run tauri build` (which utilizes the `scripts/tauri.ps1` helper for setting up the environment).
 

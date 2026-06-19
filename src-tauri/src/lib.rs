@@ -1,4 +1,9 @@
+mod backup;
 mod commands;
+mod crypto;
+mod game_detect;
+mod mod_manager;
+mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,7 +19,6 @@ pub fn run() {
             commands::install_mod,
             commands::uninstall_mod,
             commands::delete_backup,
-            commands::check_updates,
             commands::open_game_folder,
             commands::list_mods,
             commands::toggle_mod,

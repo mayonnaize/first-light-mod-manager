@@ -52,10 +52,7 @@ test.beforeEach(async ({ page }) => {
           if (command === 'load_settings') {
             return {
               game_path: '',
-              language: 'en',
-              nexus_api_key: '',
-              nexus_mod_id: '0',
-              auto_check_updates: false
+              language: 'en'
             };
           }
           if (command === 'detect_game') {
@@ -187,8 +184,6 @@ test('normalizeSettings: 空オブジェクトはデフォルト値を補完す�
     return window.normalizeSettings({});
   });
   expect(result.language).toBe('en');
-  expect(result.nexus_mod_id).toBe('0');
-  expect(result.auto_check_updates).toBe(true);
   expect(result.game_path).toBe('');
 });
 
@@ -216,45 +211,7 @@ test('normalizeSettings: "en" は有効な言語として受け入れる', async
   expect(result.language).toBe('en');
 });
 
-test('normalizeSettings: nexus_mod_id が undefined のとき "0" を使う', async ({ page }) => {
-  await page.goto(baseUrl);
-  const result = await page.evaluate(() => window.normalizeSettings({ nexus_mod_id: undefined }));
-  expect(result.nexus_mod_id).toBe('0');
-});
 
-test('normalizeSettings: auto_check_updates の boolean 型を保持', async ({ page }) => {
-  await page.goto(baseUrl);
-  const results = await page.evaluate(() => {
-    return [
-      window.normalizeSettings({ auto_check_updates: true }),
-      window.normalizeSettings({ auto_check_updates: false })
-    ];
-  });
-  expect(results[0].auto_check_updates).toBe(true);
-  expect(results[1].auto_check_updates).toBe(false);
-});
-
-test('normalizeSettings: localStorageの "false" は auto_check_updates=false になる', async ({ page }) => {
-  await page.goto(baseUrl);
-  const result = await page.evaluate(() => {
-    localStorage.setItem('autoCheckUpdates', 'false');
-    const res = window.normalizeSettings({});
-    localStorage.clear();
-    return res;
-  });
-  expect(result.auto_check_updates).toBe(false);
-});
-
-test('normalizeSettings: localStorageの他の値は auto_check_updates=true になる', async ({ page }) => {
-  await page.goto(baseUrl);
-  const result = await page.evaluate(() => {
-    localStorage.setItem('autoCheckUpdates', 'true');
-    const res = window.normalizeSettings({});
-    localStorage.clear();
-    return res;
-  });
-  expect(result.auto_check_updates).toBe(true);
-});
 
 test('normalizeSettings: game_path は設定値を優先する', async ({ page }) => {
   await page.goto(baseUrl);

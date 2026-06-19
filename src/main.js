@@ -25,8 +25,6 @@ const translations = {
     btn_install_main: "Install Mod",
     btn_uninstall: "Uninstall",
     btn_open_folder: "Open Folder",
-    new_version: "New version available!",
-    btn_download: "Download",
     lbl_game: "Game",
     lbl_mods: "Mods",
     lbl_backup: "Backup",
@@ -52,16 +50,10 @@ const translations = {
     group_game_path: "Game Path",
     lbl_game_directory: "007: First Light Directory",
     btn_browse: "Browse",
-    lbl_api_key: "API Key (optional — to check for updates)",
-    placeholder_api_key: "Your Nexus Mods API key...",
-    lbl_mod_id: "Nexus Mod ID (0 to disable)",
-    placeholder_mod_id: "e.g., 123",
-    lbl_auto_update: "Check for updates automatically",
     group_backup: "Backup",
     lbl_backup_status: "Original backup",
     btn_delete_backup: "Delete backup",
     btn_save_settings: "Save Settings",
-    btn_check_updates_now: "Check for updates now",
     title_about: "About",
     subtitle_about: "Open Source Mod Manager",
     about_version: "Version 0.1.0",
@@ -94,13 +86,9 @@ const translations = {
     err_select_dir: "Error selecting directory: ",
     err_install: "Error installing mod: ",
     err_uninstall: "Error uninstalling: ",
-    err_check_updates: "Could not check for updates: ",
-    updates_disabled: "Updates check disabled (Mod ID not configured).",
     toast_no_backup: "No backup to remove.",
     toast_dev_feature: "Feature in development.",
     drop_error_ext: "Please select a .rpkg or .zip file",
-    update_banner_ver: "Version {version} available on Nexus Mods.",
-    toast_latest_ver: "You already have the latest version!",
     game_not_found_manual: "Game not found. Configure path manually.",
     title_installed_mods: "Installed Mods",
     no_mods_installed: "No mods installed yet. Go to \"Install Mod\" to add one!",
@@ -136,8 +124,6 @@ const translations = {
     btn_install_main: "Instalar Mod",
     btn_uninstall: "Desinstalar",
     btn_open_folder: "Abrir Pasta",
-    new_version: "Nova versão disponível!",
-    btn_download: "Baixar",
     lbl_game: "Jogo",
     lbl_mods: "Mods",
     lbl_backup: "Backup",
@@ -163,16 +149,10 @@ const translations = {
     group_game_path: "Caminho do Jogo",
     lbl_game_directory: "Diretório do 007: First Light",
     btn_browse: "Alterar",
-    lbl_api_key: "API Key (opcional — para verificar atualizações)",
-    placeholder_api_key: "Sua API key do Nexus Mods...",
-    lbl_mod_id: "Nexus Mod ID (0 para desativar)",
-    placeholder_mod_id: "ex: 123",
-    lbl_auto_update: "Verificar atualizações automaticamente",
     group_backup: "Backup",
     lbl_backup_status: "Backup original",
     btn_delete_backup: "Remover backup",
     btn_save_settings: "Salvar configurações",
-    btn_check_updates_now: "Verificar atualizações agora",
     title_about: "Sobre",
     subtitle_about: "Gerenciador de Mods Open Source",
     about_version: "Versão 0.1.0",
@@ -205,13 +185,9 @@ const translations = {
     err_select_dir: "Erro ao selecionar pasta: ",
     err_install: "Erro ao instalar: ",
     err_uninstall: "Erro ao desinstalar: ",
-    err_check_updates: "Não foi possível verificar atualizações: ",
-    updates_disabled: "Verificação de atualizações desativada (Mod ID não configurado).",
     toast_no_backup: "Nenhum backup para remover.",
     toast_dev_feature: "Funcionalidade em desenvolvimento.",
     drop_error_ext: "Por favor, selecione um arquivo .rpkg ou .zip",
-    update_banner_ver: "Versão {version} disponível no Nexus Mods.",
-    toast_latest_ver: "Você já tem a versão mais recente!",
     game_not_found_manual: "Jogo não encontrado. Configure o caminho manualmente.",
     title_installed_mods: "Mods Instalados",
     no_mods_installed: "Nenhum mod instalado ainda. Vá em \"Instalar Mod\" para adicionar um!",
@@ -249,10 +225,7 @@ let state = {
   modPreview: null,
   settings: {
     game_path: '',
-    language: 'en',
-    nexus_api_key: '',
-    nexus_mod_id: '0',
-    auto_check_updates: true
+    language: 'en'
   },
   language: 'en' // Default language
 };
@@ -325,12 +298,7 @@ function hideProgress() {
 function normalizeSettings(settings = {}) {
   return {
     game_path: settings.game_path || settings.gamePath || localStorage.getItem('gamePath') || '',
-    language: settings.language === 'pt' ? 'pt' : 'en',
-    nexus_api_key: settings.nexus_api_key || settings.nexusApiKey || localStorage.getItem('nexusApiKey') || '',
-    nexus_mod_id: settings.nexus_mod_id || settings.nexusModId || localStorage.getItem('nexusModId') || '0',
-    auto_check_updates: typeof settings.auto_check_updates === 'boolean'
-      ? settings.auto_check_updates
-      : localStorage.getItem('autoCheckUpdates') !== 'false'
+    language: settings.language === 'pt' ? 'pt' : 'en'
   };
 }
 
@@ -338,10 +306,7 @@ function currentSettingsFromInputs() {
   return normalizeSettings({
     ...state.settings,
     game_path: document.getElementById('input-game-path').value.trim(),
-    language: document.getElementById('select-language').value,
-    nexus_api_key: document.getElementById('input-nexus-key').value.trim(),
-    nexus_mod_id: document.getElementById('input-mod-id').value.trim() || '0',
-    auto_check_updates: document.getElementById('check-auto-update').checked
+    language: document.getElementById('select-language').value
   });
 }
 
@@ -351,16 +316,10 @@ function applySettings(settings) {
   state.language = normalized.language;
 
   document.getElementById('input-game-path').value = normalized.game_path;
-  document.getElementById('input-nexus-key').value = normalized.nexus_api_key;
-  document.getElementById('input-mod-id').value = normalized.nexus_mod_id;
-  document.getElementById('check-auto-update').checked = normalized.auto_check_updates;
   document.getElementById('select-language').value = normalized.language;
 
   localStorage.setItem('language', normalized.language);
   localStorage.setItem('gamePath', normalized.game_path);
-  localStorage.setItem('nexusApiKey', normalized.nexus_api_key);
-  localStorage.setItem('nexusModId', normalized.nexus_mod_id);
-  localStorage.setItem('autoCheckUpdates', normalized.auto_check_updates.toString());
 }
 
 async function persistSettings(overrides = {}) {
@@ -642,37 +601,7 @@ async function uninstallMod() {
   }
 }
 
-// ─── Verificar atualizações ───────────────────────────────────────────
-async function checkUpdates(showToast = false) {
-  const lang = state.language;
-  const settings = normalizeSettings({ ...state.settings, ...currentSettingsFromInputs() });
-  const modId = settings.nexus_mod_id || '0';
-  const apiKey = settings.nexus_api_key || '';
 
-  if (modId === '0' || !modId) {
-    if (showToast) toast(translations[lang].updates_disabled, 'info');
-    return;
-  }
-  try {
-    const result = await invoke('check_updates', { 
-      currentVersion: state.modVersion || '0.1.0', 
-      modId: modId,
-      apiKey: apiKey || null
-    });
-    if (result.has_update) {
-      const banner = document.getElementById('update-banner');
-      banner.style.display = 'flex';
-      document.getElementById('update-version-text').textContent = translations[lang].update_banner_ver.replace('{version}', result.version);
-    } else {
-      document.getElementById('update-banner').style.display = 'none';
-      if (showToast) {
-        toast(translations[lang].toast_latest_ver, 'success');
-      }
-    }
-  } catch (err) {
-    if (showToast) toast(translations[state.language].err_check_updates + err, 'error');
-  }
-}
 
 // ─── Selecionar arquivo do mod ────────────────────────────────────────
 async function browseModFile() {
@@ -823,11 +752,7 @@ async function saveSettings() {
     if (state.selectedModFile) {
       await inspectSelectedMod();
     }
-    if (saved.auto_check_updates) {
-      checkUpdates(false).catch(() => {});
-    } else {
-      document.getElementById('update-banner').style.display = 'none';
-    }
+
   } catch (err) {
     toast(translations[state.language].err_select_dir + err, 'error');
   }
@@ -955,7 +880,7 @@ function bindEvents() {
   // Settings
   document.getElementById('btn-choose-path').addEventListener('click', selectGamePath);
   document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
-  document.getElementById('btn-check-now').addEventListener('click', () => checkUpdates(true));
+
   document.getElementById('btn-delete-backup').addEventListener('click', async () => {
     if (!state.backupExists) { toast(translations[state.language].toast_no_backup, 'info'); return; }
     try {
@@ -980,11 +905,7 @@ function bindEvents() {
     });
   }
 
-  // Update banner
-  document.getElementById('btn-download-update').addEventListener('click', e => {
-    e.preventDefault();
-    openLink(getNexusModUrl());
-  });
+
 
   // About links
   document.getElementById('abt-discord').addEventListener('click', e => { e.preventDefault(); openLink(DISCORD_URL); });
@@ -1016,9 +937,7 @@ async function init() {
   }
   await detectGame();
 
-  if (state.settings.auto_check_updates) {
-    checkUpdates(false).catch(() => {});
-  }
+
 }
 
 window.addEventListener('DOMContentLoaded', init);
