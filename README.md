@@ -45,7 +45,7 @@ Inspired by the modding tools developed for the **Hitman: World of Assassination
 - 🔍 **Auto-Detection** — Automatically finds your game install directory (Steam & Epic Games Store)
 - 📦 **One-Click Install** — Drag and drop `.rpkg` or `.zip` mod packages to install
 - ✍️ **Smart Manifest Patching** — Automatically edits `packagedefinition.txt` to inject mods cleanly
-- 🛡️ **Safe Backups** — Backs up your original `Runtime` folder before applying any mod
+- 🛡️ **Safe Backups** — Backs up only `packagedefinition.txt` before applying any mod (minimal, fast)
 - 🗑️ **One-Click Uninstall** — Fully restore your game to vanilla state instantly
 - 📋 **Activity Log** — Real-time log of every operation
 - ⚡ **Lightweight** — Under 10MB, no runtime dependencies required
@@ -78,7 +78,7 @@ Inspirado pelas ferramentas de modding da comunidade de **Hitman: World of Assas
 - 🔍 **Detecção Automática** — Encontra a pasta do jogo sozinho (Steam e Epic Games)
 - 📦 **Instalação Simplificada** — Arraste e solte arquivos `.rpkg` ou `.zip` diretamente na tela
 - ✍️ **Modificação Segura** — Atualiza o `packagedefinition.txt` injetando os mods de forma limpa
-- 🛡️ **Backup Original** — Cria backup da pasta `Runtime` antes de instalar qualquer mod
+- 🛡️ **Backup Original** — Salva apenas o `packagedefinition.txt` antes de instalar qualquer mod (mínimo e rápido)
 - 🗑️ **Restauração Rápida** — Remove todos os mods e restaura o jogo original com 1 clique
 - 📋 **Log em Tempo Real** — Acompanhe cada etapa da instalação
 - ⚡ **Leve** — Menos de 10MB, sem dependências extras
