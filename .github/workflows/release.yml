@@ -128,9 +128,7 @@ jobs:
             ### インストール方法
             - **installer** (`.msi` または `.exe`) をダウンロードして実行
             - または `first-light-mod-manager.exe` を直接起動 (ポータブル)
-
-            ### 変更内容
-            [CHANGELOG を参照](https://github.com/${{ github.repository }}/commits/main)
+          generate_release_notes: true
           files: ${{ steps.artifacts.outputs.paths }}
           draft: false
           prerelease: false
