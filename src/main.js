@@ -758,6 +758,8 @@ async function openLink(url) {
 // ─── Drag & drop ──────────────────────────────────────────────────────
 function setupDropZone() {
   const zone = document.getElementById('drop-zone');
+  
+  // テスト用のHTML5イベントハンドラ
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', async e => {
@@ -769,6 +771,42 @@ function setupDropZone() {
       toast(translations[state.language].drop_error_ext, 'error');
     }
   });
+
+  // アプリ動作時のTauriネイティブドラッグアンドドロップイベント監視
+  if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+    const { listen } = window.__TAURI__.event;
+
+    listen('tauri://drag-enter', () => {
+      // インストールタブ有効時のみドラッグオーバー表示
+      const isInstallTabActive = document.getElementById('tab-install').classList.contains('active');
+      if (isInstallTabActive) {
+        zone.classList.add('drag-over');
+      }
+    }).catch(err => console.error('tauri://drag-enter error:', err));
+
+    listen('tauri://drag-leave', () => {
+      zone.classList.remove('drag-over');
+    }).catch(err => console.error('tauri://drag-leave error:', err));
+
+    listen('tauri://drag-drop', async (e) => {
+      zone.classList.remove('drag-over');
+      const paths = e.payload?.paths;
+      if (paths && paths.length > 0) {
+        const filePath = paths[0];
+        const lowerPath = filePath.toLowerCase();
+        if (lowerPath.endsWith('.rpkg') || lowerPath.endsWith('.zip')) {
+          // インストールタブ以外の場合の自動切り替え
+          const installTab = document.getElementById('tab-install');
+          if (!installTab.classList.contains('active')) {
+            document.getElementById('nav-install').click();
+          }
+          await setModFile(filePath);
+        } else {
+          toast(translations[state.language].drop_error_ext, 'error');
+        }
+      }
+    }).catch(err => console.error('tauri://drag-drop error:', err));
+  }
 }
 
 // ─── Salvar configurações ─────────────────────────────────────────────
