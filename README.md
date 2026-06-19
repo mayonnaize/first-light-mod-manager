@@ -1,36 +1,31 @@
+# 🕵️ First Light Mod Manager (FLMM) (Improved Fork)
+
+> A clean, modern, and lightweight open-source mod manager for **007: First Light** (Improved Fork).
+
+⚠️ **Important**: This repository is a fork of [Welsker-dev/first-light-mod-manager](https://github.com/Welsker-dev/first-light-mod-manager) containing major bug fixes, stability improvements, and new features.
+
+### 🌟 Key Improvements from Upstream (For General Users)
+
+This fork resolves critical bugs from the original version and introduces new features to ensure a stable and user-friendly modding experience:
+
+* **No More Game Crashes & Failed Mods**:
+  * Fixed game file (`packagedefinition.txt`) patching (XTEA encryption/decryption and encoding issues). This ensures your game starts properly and mods are correctly loaded after patching.
+* **Turn Mods On or Off with One Click**:
+  * You can now temporarily enable or disable individual mods using checkboxes on the mod list, without needing to delete and reinstall them.
+* **No Conflicts with Game Updates or Other Mods**:
+  * Installed mods are automatically assigned patch numbers starting from 100. This prevents them from conflicting with official game updates or overwriting other mods.
+* **Reliable Drag & Drop Installation**:
+  * Fixed the bug where dragging and dropping `.zip` or `.rpkg` mod files into the window would fail. Installation is now smooth and reliable.
+* **Auto-Check for Mod Updates**:
+  * Integrated Nexus Mods API support, allowing the manager to automatically check if new versions of your installed mods are available.
+* **Remember Settings**:
+  * Your language settings (English/Portuguese) and selected game folder are automatically saved when you close the app.
+
+---
+
 # 🕵️ First Light Mod Manager (FLMM)
 
-> **007: First Light** 向けの軽量オープンソース Mod マネージャー
-
----
-
-## Changes from upstream ([Welsker-dev/first-light-mod-manager](https://github.com/Welsker-dev/first-light-mod-manager))
-
-This fork contains the following fixes and enhancements on top of the original:
-
-### `src-tauri/src/commands.rs`
-
-- **Fixed XTEA keys and header** — Corrected the XTEA decryption keys and the 16-byte magic header constant to match the actual 007: First Light `packagedefinition.txt` format.
-- **Fixed `packagedefinition.txt` encoding** — Replaced strict `String::from_utf8` with Latin-1 (ISO 8859-1) fixed decoding. UTF-8 BOM (`EF BB BF`) is stripped before decoding.
-- **MOD patch number auto-assignment** — MOD `.rpkg` files are now assigned patch numbers starting at **100** (`MOD_PATCH_START = 100`) to avoid colliding with official game patches. Previously, chunk0 started at patch2 and other chunks at patch1.
-- **Backup-aware slot reservation** — `used_patch_slots` now also scans `Runtime_backup_original` to treat official patch slots as reserved, preventing overwrite on re-install.
-- **Rewrote backend from scratch** — The upstream `commands.rs` was a stub. This fork contains a full implementation: settings persistence, game auto-detection (Steam/Epic), mod install/uninstall/toggle/delete, ZIP package support, mod metadata, package definition patching, and Nexus Mods update check.
-- **68 unit tests added** — Rust バックエンドの全主要関数をカバー (XTEA暗号・CRC32・パーサー・設定保存・ファイルシステム操作等)
-
-### `tests/unit/utils.spec.js` (New)
-
-- **20 JS ユニットテスト追加** — `formatBytes`, `escapeHtml`, `normalizeSettings` の純粋関数ロジックを境界値・エラー系も含めて検証
-
-### `scripts/tauri.ps1` / `tests/e2e/app.spec.js`
-
-- PowerShell build helper and Playwright E2E test suite (47 tests) added.
-
-### `README.md`
-
-- Rewritten in Japanese only.
-
----
-
+> A clean, modern, and lightweight open-source mod manager for **007: First Light**.
 
 ![License](https://img.shields.io/github/license/Welsker-dev/first-light-mod-manager)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
@@ -39,95 +34,94 @@ This fork contains the following fixes and enhancements on top of the original:
 
 ---
 
-## 概要
+## 🌎 English
 
-**First Light Mod Manager (FLMM)** は **007: First Light** (IO Interactive, 2026 / Glacier 2 エンジン) 専用の無料オープンソース Mod マネージャーです。
+**First Light Mod Manager (FLMM)** is a free, open-source mod manager built specifically for **007: First Light** (IO Interactive, 2026), powered by the **Glacier 2 Engine**.
 
-Hitman: World of Assassination コミュニティのモッディングツールに触発され、`.rpkg` / `.zip` 形式の Mod を手動でファイルを触ることなく簡単にインストール・管理・削除できます。
+Inspired by the modding tools developed for the **Hitman: World of Assassination** community (also on Glacier 2), FLMM brings the same convenience to 007: First Light — making it easy to install, manage, and remove `.rpkg` and `.zip` mods without touching any files manually.
 
----
+### ✨ Features
 
-## 機能
+- 🔍 **Auto-Detection** — Automatically finds your game install directory (Steam & Epic Games Store)
+- 📦 **One-Click Install** — Drag and drop `.rpkg` or `.zip` mod packages to install
+- ✍️ **Smart Manifest Patching** — Automatically edits `packagedefinition.txt` to inject mods cleanly
+- 🛡️ **Safe Backups** — Backs up your original `Runtime` folder before applying any mod
+- 🗑️ **One-Click Uninstall** — Fully restore your game to vanilla state instantly
+- 📋 **Activity Log** — Real-time log of every operation
+- ⚡ **Lightweight** — Under 10MB, no runtime dependencies required
 
-| 機能 | 説明 |
-|------|------|
-| 🔍 自動検出 | Steam / Epic Games Store のインストール先を自動検出 |
-| 📦 ワンクリックインストール | `.rpkg` または `.zip` をドラッグ＆ドロップするだけ |
-| 👁️ インストール前プレビュー | ターゲットファイル名とパッチ番号を事前確認 |
-| ✍️ パッチレベル自動調整 | `packagedefinition.txt` のパーティション patchlevel を自動更新 |
-| 🔢 パッチ番号自動採番 | 公式パッチと衝突しないよう番号 (100〜) を自動割り当て |
-| 🛡️ 自動バックアップ | インストール前に `Runtime` フォルダを自動バックアップ |
-| 🗑️ ワンクリックアンインストール | バックアップからゲームを即座に完全復元 |
-| ⚡ 軽量 | 追加ランタイム依存なし |
+### 🚀 How to Use
 
----
+1. **Download** the installer or portable `.exe` from [Releases](../../releases)
+2. **Open FLMM** — it will auto-detect your 007: First Light install
+3. If not detected, click **"Select manually"** and point to your game folder
+4. Go to the **"Install Mod"** tab
+5. **Drag and drop** your `.rpkg` or `.zip` mod file (or click to browse)
+6. Click **"Install Mod"** — done!
+7. To remove all mods, click **"Uninstall"** on the home screen
 
-## 使い方
-
-1. [Releases](../../releases) からインストーラーまたはポータブル `.exe` をダウンロード
-2. FLMM を起動 — 007: First Light のインストール先を自動検出します
-3. 検出されない場合は **「手動で選択」** からゲームフォルダを指定
-4. **「Mod をインストール」** タブへ移動
-5. `.rpkg` または `.zip` ファイルをドラッグ＆ドロップ（またはクリックして参照）
-6. インストール先ファイルのプレビューを確認し **「Mod をインストール」** をクリック
-7. 全 Mod を削除するにはホーム画面の **「アンインストール」** をクリック
-
----
-
-## 動作環境
+### 🛠️ Requirements
 
 - Windows 10 / 11 (64-bit)
-- Steam または Epic Games Store 版 007: First Light
+- 007: First Light installed via Steam or Epic Games Store
 
 ---
 
-## 開発
+## 🇧🇷 Português
 
-```powershell
-npm install
-npm test
-npm run tauri build
-```
+**First Light Mod Manager (FLMM)** é um gerenciador de mods gratuito e open-source feito especificamente para **007: First Light** (IO Interactive, 2026), que roda na **Glacier 2 Engine**.
 
-`npm test` は Rust ユニットテストと Playwright E2E テストを実行します。Tauri スクリプトは Windows 上でデフォルトの Rust ツールチェーンパスを自動追加します。
+Inspirado pelas ferramentas de modding da comunidade de **Hitman: World of Assassination** (também na Glacier 2), o FLMM traz a mesma praticidade para o 007: First Light — facilitando instalar, gerenciar e remover mods `.rpkg` e `.zip` sem precisar mexer em nenhum arquivo manualmente.
 
-また、以下の方法でテストカバレッジを測定できます：
+### ✨ Recursos
 
-- **Rust バックエンドカバレッジ**: `cargo llvm-cov` を用いて計測
-- **フロントエンドカバレッジ**: Playwright テスト実行時に `monocart-reporter` を介して自動計測 (結果は `test-results/coverage/` に出力)
+- 🔍 **Detecção Automática** — Encontra a pasta do jogo sozinho (Steam e Epic Games)
+- 📦 **Instalação Simplificada** — Arraste e solte arquivos `.rpkg` ou `.zip` diretamente na tela
+- ✍️ **Modificação Segura** — Atualiza o `packagedefinition.txt` injetando os mods de forma limpa
+- 🛡️ **Backup Original** — Cria backup da pasta `Runtime` antes de instalar qualquer mod
+- 🗑️ **Restauração Rápida** — Remove todos os mods e restaura o jogo original com 1 clique
+- 📋 **Log em Tempo Real** — Acompanhe cada etapa da instalação
+- ⚡ **Leve** — Menos de 10MB, sem dependências extras
 
-VS Code をご利用の場合は、`Ctrl+Shift+B` もしくは「タスクの実行」から `Coverage (Rust)` / `Coverage (JS/Frontend)` / `Coverage (All)` タスクを使用して、ワンクリックでカバレッジ測定からレポート表示まで行えます。
+### 🚀 Como Usar
 
----
+1. **Baixe** o instalador ou `.exe` portátil em [Releases](../../releases)
+2. **Abra o FLMM** — ele detecta automaticamente a pasta do 007: First Light
+3. Se não encontrar, clique em **"Selecionar manualmente"** e aponte para a pasta do jogo
+4. Vá na aba **"Instalar Mod"**
+5. **Arraste e solte** seu arquivo `.rpkg` ou `.zip` (ou clique para procurar)
+6. Clique em **"Instalar Mod"** — pronto!
+7. Para remover todos os mods, clique em **"Desinstalar"** na tela inicial
 
-## 使用技術
+### 🛠️ Requisitos
 
-- [Tauri](https://tauri.app/) — 軽量デスクトップアプリフレームワーク (Rust + HTML/CSS/JS)
-- [Rust](https://www.rust-lang.org/) — バックエンドロジック (ファイル操作・ゲーム検出・RPKG 処理)
-- Vanilla HTML/CSS/JS — フロントエンド UI
-
----
-
-## 関連プロジェクト・クレジット
-
-- [Glacier Modding](https://glaciermodding.org/) — Glacier 2 エンジン向けコミュニティツール
-- [RPKG Tool](https://github.com/glacier-modding/RPKG-Tool) — RPKG 処理の参考元
-- [Simple Mod Framework](https://www.nexusmods.com/hitman3/mods/200) — Hitman: WoA 向け Mod マネージャー (本プロジェクトの着想元)
+- Windows 10 / 11 (64-bit)
+- 007: First Light instalado via Steam ou Epic Games Store
 
 ---
 
-## コントリビューション
+## 🏗️ Built With
 
-プルリクエスト歓迎。バグ報告や機能提案は [Issue](../../issues) からどうぞ。
+- [Tauri](https://tauri.app/) — Lightweight desktop app framework (Rust + HTML/CSS/JS)
+- [Rust](https://www.rust-lang.org/) — Backend logic (file operations, game detection, RPKG handling)
+- Vanilla HTML/CSS/JS — Frontend interface
+
+## 🔗 Related Projects & Credits
+
+- [Glacier Modding](https://glaciermodding.org/) — Community tools for Glacier 2 Engine games
+- [RPKG Tool](https://github.com/glacier-modding/RPKG-Tool) — The tool that inspired the RPKG handling in FLMM
+- [Simple Mod Framework](https://www.nexusmods.com/hitman3/mods/200) — Mod manager for Hitman: WoA, which inspired this project
+
+## 🤝 Contributing
+
+Pull requests are welcome! If you find a bug or want to suggest a feature, open an [Issue](../../issues).
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-## ライセンス
-
-[MIT License](LICENSE)
-
----
-
-> Made with ❤️ by [DublaX Team](https://discord.gg/aMfk6wgA) — *「Dublamos jogos!」*
+> Made with ❤️ by [DublaX Team](https://discord.gg/aMfk6wgA) — *"Dublamos jogos!"*
 >
-> 007 FIRST LIGHT © 2026 IOI / Metro-Goldwyn-Mayer Studios Inc. 本ツールは IO Interactive・Danjaq・EON Productions とは無関係です。
+> 007 FIRST LIGHT © 2026 IOI / Metro-Goldwyn-Mayer Studios Inc. This tool is not affiliated with IO Interactive, Danjaq, or EON Productions.
