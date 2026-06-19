@@ -123,11 +123,11 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: "First Light Mod Manager ${{ env.TAG }}"
           body: |
-            ## First Light Mod Manager ${{ env.TAG }}
+            ## Forked First Light Mod Manager ${{ env.TAG }}
 
-            ### インストール方法
-            - **installer** (`.msi` または `.exe`) をダウンロードして実行
-            - または `first-light-mod-manager.exe` を直接起動 (ポータブル)
+            ### Installation
+            - Download and run the **installer** (`.msi` or `.exe`)
+            - Or launch `first-light-mod-manager.exe` directly (portable)
           generate_release_notes: true
           files: ${{ steps.artifacts.outputs.paths }}
           draft: false
