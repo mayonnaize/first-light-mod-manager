@@ -1,6 +1,6 @@
 [package]
 name = "first-light-mod-manager"
-version = "0.1.0"
+version = "0.2.0"
 description = "First Light Mod Manager — Gerenciador de mods para 007: First Light"
 authors = ["Open Source"]
 edition = "2021"
