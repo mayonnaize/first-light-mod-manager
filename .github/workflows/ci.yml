@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   test-rust:
     name: Rust Unit Tests & Coverage
@@ -36,6 +40,17 @@ jobs:
           name: rust-coverage
           path: lcov.info
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Report Rust coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/report-coverage.mjs rust lcov.info
+
   test-e2e:
     name: Playwright E2E Tests & Coverage
     runs-on: ubuntu-latest
@@ -56,6 +71,11 @@ jobs:
 
       - name: Run E2E tests
         run: npx playwright test
+
+      - name: Report Frontend coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/report-coverage.mjs frontend test-results/coverage/lcov.info
 
       - name: Upload Frontend coverage report
         if: always()
