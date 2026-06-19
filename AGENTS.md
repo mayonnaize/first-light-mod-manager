@@ -22,7 +22,7 @@ The application is built using **Tauri** (v2), which combines a web frontend wit
 - **Patch Numbering:** Mod patch numbers are automatically assigned starting at **100** to avoid colliding with official patches.
 
 ## 3. Testing & Workflows
-- **Unit Tests (Backend):** Rust unit tests are located in `src-tauri/src/` (within `commands.rs`). Run via `npm run test:rust`. **68 tests** covering XTEA crypto, CRC32, path normalization, patchlevel logic, metadata parsing, VDF parsing, settings persistence, etc. Coverage is measured via `cargo llvm-cov`.
+- **Unit Tests (Backend):** Rust unit tests are located in `src-tauri/src/` (within `commands.rs`). Run via `npm run test:rust`. **77 tests** covering XTEA crypto, CRC32, path normalization, patchlevel logic, metadata parsing, VDF parsing, settings persistence, backup/restore/migration, etc. Coverage is measured via `cargo llvm-cov`.
 - **Unit Tests (Frontend):** Pure-function JS unit tests located in `tests/unit/`. Run via `npm run test:e2e` (with single worker). **20 tests** for `formatBytes`, `escapeHtml`, `normalizeSettings` executing in the browser page context to test real code.
 - **E2E Tests (Frontend):** Playwright is used for End-to-End testing, located in `tests/e2e/`. Run via `npm run test:e2e`. **47 tests** covering navigation, mod install flow, toggle/delete, language switching, settings persistence, update checking, etc. V8 coverage is measured via Playwright E2E/unit tests using `monocart-reporter` (reports output to `test-results/coverage/`).
 - **Combined Test Command:** `npm test` runs both Rust and E2E tests.
@@ -30,5 +30,5 @@ The application is built using **Tauri** (v2), which combines a web frontend wit
 
 ## 4. Coding Conventions & Best Practices
 - **Frontend Changes:** Keep DOM manipulation direct and clean. Update translations and localized strings where applicable. Avoid adding external dependencies unless absolutely necessary.
-- **Backend Changes:** Ensure strict error handling and path validations. The game uses a specific XTEA key and 16-byte magic header for its `packagedefinition.txt`, and file encoding requires specific UTF-8 BOM stripping before Latin-1 decoding. Ensure `used_patch_slots` logic accounts for `Runtime_backup_original`.
+- **Backend Changes:** Ensure strict error handling and path validations. The game uses a specific XTEA key and 16-byte magic header for its `packagedefinition.txt`, and file encoding requires specific UTF-8 BOM stripping before Latin-1 decoding. Backup strategy stores only `packagedefinition.txt` in `.flmm_backup/` (not the entire Runtime folder); legacy `Runtime_backup_original/` is auto-migrated on first use.
 - **Safety:** Never stage or commit changes unless explicitly instructed by the user. Do not break type safety in Rust or suppress warnings without a clear architectural reason.

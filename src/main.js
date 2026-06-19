@@ -1,5 +1,5 @@
 const { invoke } = window.__TAURI__.core;
-const { open } = window.__TAURI__.dialog;
+const { open, confirm } = window.__TAURI__.dialog;
 const { openUrl } = window.__TAURI__.opener;
 
 // ─── Configurações Gerais ─────────────────────────────────────────────
@@ -625,7 +625,7 @@ async function uninstallMod() {
   if (!state.gamePath) return;
 
   const lang = state.language;
-  const confirmed = confirm(translations[lang].confirm_uninstall);
+  const confirmed = await confirm(translations[lang].confirm_uninstall);
   if (!confirmed) return;
 
   const btn = document.getElementById('btn-uninstall-main');
@@ -909,7 +909,7 @@ async function renderModList() {
       // Bind delete click
       card.querySelector('.btn-delete-mod').addEventListener('click', async () => {
         const modId = m.id;
-        const confirmed = confirm(translations[state.language].confirm_delete_mod);
+        const confirmed = await confirm(translations[state.language].confirm_delete_mod);
         if (!confirmed) return;
         try {
           await invoke('delete_mod', { gamePath: state.gamePath, modId });

@@ -470,28 +470,12 @@ fn used_patch_slots(runtime: Option<&Path>) -> Result<HashSet<(u32, u32)>, Strin
         return Ok(used);
     }
 
-    // Runtime 内の既存パッチを収集
+    // Runtime 内の既存パッチを収集 (公式パッチも Mod パッチも含む)
     for entry in fs::read_dir(runtime).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().to_string();
         if let Some((chunk, patch, _)) = parse_patch_file_name(&name) {
             used.insert((chunk, patch));
-        }
-    }
-
-    // バックアップ内の公式パッチを予約スロットとして追加
-    let backup_runtime = runtime
-        .parent()
-        .map(|game| game.join("Runtime_backup_original"));
-    if let Some(ref backup) = backup_runtime {
-        if backup.is_dir() {
-            for entry in fs::read_dir(backup).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                let name = entry.file_name().to_string_lossy().to_string();
-                if let Some((chunk, patch, _)) = parse_patch_file_name(&name) {
-                    used.insert((chunk, patch));
-                }
-            }
         }
     }
 
@@ -847,7 +831,9 @@ pub async fn get_mod_status(game_path: String) -> ModStatus {
         };
     };
 
-    let backup = game_dir.join("Runtime_backup_original");
+    // 新形式バックアップの存在確認 (旧形式も互換チェック)
+    let backup_exists = game_dir.join(".flmm_backup").exists()
+        || game_dir.join("Runtime_backup_original").exists();
     let installed = list_mods(game_dir.to_string_lossy().to_string())
         .await
         .map(|mods| mods.iter().any(|item| item.active))
@@ -860,8 +846,49 @@ pub async fn get_mod_status(game_path: String) -> ModStatus {
         } else {
             String::new()
         },
-        backup_exists: backup.exists(),
+        backup_exists,
     }
+}
+
+// packagedefinition.txt のみを .flmm_backup/ にバックアップ
+fn backup_packagedefinition_only(game_dir: &Path) -> Result<(), String> {
+    let src = game_dir.join("Runtime").join("packagedefinition.txt");
+    if !src.exists() {
+        return Err("Runtime\\packagedefinition.txt was not found".to_string());
+    }
+    let backup_dir = game_dir.join(".flmm_backup");
+    fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    fs::copy(&src, backup_dir.join("packagedefinition.txt")).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// バックアップから packagedefinition.txt を Runtime/ に復元
+fn restore_packagedefinition(game_dir: &Path) -> Result<(), String> {
+    let backup_file = game_dir.join(".flmm_backup").join("packagedefinition.txt");
+    if !backup_file.exists() {
+        return Err("Backup packagedefinition.txt was not found".to_string());
+    }
+    let dst = game_dir.join("Runtime").join("packagedefinition.txt");
+    fs::copy(&backup_file, &dst).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// 旧形式 Runtime_backup_original/ → 新形式 .flmm_backup/ へ自動移行
+fn migrate_legacy_backup(game_dir: &Path) -> Result<(), String> {
+    let legacy = game_dir.join("Runtime_backup_original");
+    let new_backup = game_dir.join(".flmm_backup");
+    if !legacy.is_dir() || new_backup.exists() {
+        return Ok(());
+    }
+    let legacy_pkg = legacy.join("packagedefinition.txt");
+    if !legacy_pkg.exists() {
+        // packagedefinition.txt がない旧バックアップは移行不可のため無視
+        return Ok(());
+    }
+    fs::create_dir_all(&new_backup).map_err(|e| e.to_string())?;
+    fs::copy(&legacy_pkg, new_backup.join("packagedefinition.txt")).map_err(|e| e.to_string())?;
+    fs::remove_dir_all(&legacy).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -873,7 +900,6 @@ pub async fn install_mod(
     let is_pt = lang == "pt";
     let game_dir = normalize_game_path(&game_path)?;
     let runtime = game_dir.join("Runtime");
-    let backup = game_dir.join("Runtime_backup_original");
     let mod_file = PathBuf::from(&mod_path);
 
     if !mod_file.exists() {
@@ -884,8 +910,13 @@ pub async fn install_mod(
         ));
     }
 
-    if !backup.exists() {
-        copy_dir_all(&runtime, &backup).map_err(|e| e.to_string())?;
+    // 旧形式バックアップを新形式へ移行してから処理
+    migrate_legacy_backup(&game_dir).map_err(|e| e.to_string())?;
+
+    // 初回インストール時のみ packagedefinition.txt をバックアップ
+    let new_backup = game_dir.join(".flmm_backup");
+    if !new_backup.exists() {
+        backup_packagedefinition_only(&game_dir)?;
     }
 
     let extension = mod_file
@@ -913,7 +944,7 @@ pub async fn install_mod(
             return Err(localized(
                 is_pt,
                 "O arquivo deve ser .rpkg ou .zip",
-                "File must be .rpkg or .zip",
+                "File must be .rpkg ou .zip",
             ));
         }
     };
@@ -976,32 +1007,18 @@ fn localized(is_pt: bool, pt: &str, en: &str) -> String {
     }
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if !src.exists() {
-        return Ok(());
-    }
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let dst_path = dst.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir_all(&entry.path(), &dst_path)?;
-        } else {
-            fs::copy(entry.path(), dst_path)?;
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn uninstall_mod(game_path: String, lang: String) -> Result<String, String> {
     let is_pt = lang == "pt";
     let game_dir = normalize_game_path(&game_path)?;
     let runtime = game_dir.join("Runtime");
-    let backup = game_dir.join("Runtime_backup_original");
+    let new_backup = game_dir.join(".flmm_backup");
     let marker = game_dir.join(".flmm_installed");
 
-    if !backup.exists() {
+    // 旧形式バックアップを新形式へ移行してから処理
+    migrate_legacy_backup(&game_dir).map_err(|e| e.to_string())?;
+
+    if !new_backup.exists() {
         return Err(localized(
             is_pt,
             "Backup não encontrado. Não é possível desinstalar com segurança.",
@@ -1009,11 +1026,28 @@ pub async fn uninstall_mod(game_path: String, lang: String) -> Result<String, St
         ));
     }
 
-    if runtime.exists() {
-        fs::remove_dir_all(&runtime).map_err(|e| e.to_string())?;
+    // Mod が追加したファイルのみ削除 (元の rpkg は触らない)
+    if runtime.is_dir() {
+        for entry in fs::read_dir(&runtime).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let lower = name.to_ascii_lowercase();
+            // MOD パッチ番号以上のファイルと metadata を削除
+            let is_mod_rpkg = parse_patch_file_name(&name)
+                .map(|(_, patch, _)| patch >= MOD_PATCH_START)
+                .unwrap_or(false);
+            let is_mod_meta = lower.ends_with(".metadata.json");
+            if is_mod_rpkg || is_mod_meta {
+                fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+            }
+        }
     }
-    copy_dir_all(&backup, &runtime).map_err(|e| e.to_string())?;
-    fs::remove_dir_all(&backup).map_err(|e| e.to_string())?;
+
+    // packagedefinition.txt をオリジナルに復元
+    restore_packagedefinition(&game_dir)?;
+
+    // バックアップと管理ファイルを削除
+    fs::remove_dir_all(&new_backup).map_err(|e| e.to_string())?;
     if marker.exists() {
         fs::remove_file(marker).map_err(|e| e.to_string())?;
     }
@@ -1028,9 +1062,15 @@ pub async fn uninstall_mod(game_path: String, lang: String) -> Result<String, St
 #[tauri::command]
 pub async fn delete_backup(game_path: String) -> Result<(), String> {
     let game_dir = normalize_game_path(&game_path)?;
-    let backup = game_dir.join("Runtime_backup_original");
-    if backup.exists() {
-        fs::remove_dir_all(backup).map_err(|e| e.to_string())?;
+    // 新形式バックアップを削除
+    let new_backup = game_dir.join(".flmm_backup");
+    if new_backup.exists() {
+        fs::remove_dir_all(new_backup).map_err(|e| e.to_string())?;
+    }
+    // 旧形式バックアップが残存していれば合わせて削除
+    let legacy = game_dir.join("Runtime_backup_original");
+    if legacy.exists() {
+        fs::remove_dir_all(legacy).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -1384,15 +1424,14 @@ mod tests {
     }
 
     #[test]
-    fn backup_patches_are_reserved_slots() {
-        let game = TempDir::new("backup_reserve");
+    fn official_patches_in_runtime_are_reserved_slots() {
+        // Runtime 内の公式パッチがスロット予約に含まれることを確認
+        let game = TempDir::new("official_reserve");
         let runtime = game.path.join("Runtime");
-        let backup = game.path.join("Runtime_backup_original");
         fs::create_dir_all(&runtime).unwrap();
-        fs::create_dir_all(&backup).unwrap();
 
-        // バックアップ領域への公式パッチ配置
-        fs::write(backup.join("chunk0patch1.rpkg"), b"official").unwrap();
+        // Runtime に公式パッチを配置
+        fs::write(runtime.join("chunk0patch1.rpkg"), b"official").unwrap();
 
         let pending = PendingRpkg {
             original_name: "chunk0patch1.rpkg".to_string(),
@@ -1409,15 +1448,14 @@ mod tests {
     }
 
     #[test]
-    fn backup_patches_skip_occupied_slots() {
-        let game = TempDir::new("backup_skip");
+    fn official_patches_skip_occupied_slots() {
+        // Runtime 内の既存ファイルが衝突回避されることを確認
+        let game = TempDir::new("official_skip");
         let runtime = game.path.join("Runtime");
-        let backup = game.path.join("Runtime_backup_original");
         fs::create_dir_all(&runtime).unwrap();
-        fs::create_dir_all(&backup).unwrap();
 
-        // 各種状態のパッチファイル配置
-        fs::write(backup.join("chunk1patch1.rpkg"), b"official").unwrap();
+        // Runtime に公式パッチと既存 Mod を配置
+        fs::write(runtime.join("chunk1patch1.rpkg"), b"official").unwrap();
         fs::write(runtime.join("chunk1patch2.rpkg"), b"existing_mod").unwrap();
 
         let pending = PendingRpkg {
@@ -1981,14 +2019,13 @@ mod tests {
     }
 
     #[test]
-    fn used_patch_slots_backup_dir_slots_are_reserved() {
-        let game = TempDir::new("slots_backup");
+    fn used_patch_slots_runtime_official_patches_are_reserved() {
+        // Runtime 内の公式パッチがスロット予約に含まれることを確認
+        let game = TempDir::new("slots_official");
         let runtime = game.path.join("Runtime");
-        let backup = game.path.join("Runtime_backup_original");
         fs::create_dir_all(&runtime).unwrap();
-        fs::create_dir_all(&backup).unwrap();
 
-        fs::write(backup.join("chunk0patch1.rpkg"), b"official").unwrap();
+        fs::write(runtime.join("chunk0patch1.rpkg"), b"official").unwrap();
 
         let slots = used_patch_slots(Some(&runtime)).unwrap();
         assert!(slots.contains(&(0, 1)));
@@ -2030,18 +2067,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_backup() {
-        let game = TempDir::new("del_backup");
+    async fn test_delete_backup_new_format() {
+        // 新形式 .flmm_backup/ の削除確認
+        let game = TempDir::new("del_backup_new");
         let runtime = game.path.join("Runtime");
-        let backup = game.path.join("Runtime_backup_original");
+        let backup = game.path.join(".flmm_backup");
 
         fs::create_dir_all(&runtime).unwrap();
         fs::create_dir_all(&backup).unwrap();
         fs::write(runtime.join("chunk0.rpkg"), b"").unwrap();
+        fs::write(backup.join("packagedefinition.txt"), b"pkg").unwrap();
 
         let result = delete_backup(game.path.to_string_lossy().to_string()).await;
         assert!(result.is_ok());
         assert!(!backup.exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_backup_legacy_format() {
+        // 旧形式 Runtime_backup_original/ も削除されることを確認
+        let game = TempDir::new("del_backup_legacy");
+        let runtime = game.path.join("Runtime");
+        let legacy = game.path.join("Runtime_backup_original");
+
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(runtime.join("chunk0.rpkg"), b"").unwrap();
+
+        let result = delete_backup(game.path.to_string_lossy().to_string()).await;
+        assert!(result.is_ok());
+        assert!(!legacy.exists());
     }
 
     #[tokio::test]
@@ -2140,5 +2195,124 @@ mod tests {
         assert!(!loaded2.auto_check_updates);
     }
 
-}
+    // ─── backup_packagedefinition_only ──────────────────────────────
 
+    #[test]
+    fn backup_packagedefinition_only_creates_flmm_backup() {
+        // .flmm_backup/packagedefinition.txt が生成されることを確認
+        let game = TempDir::new("bkp_only");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("packagedefinition.txt"), b"original").unwrap();
+
+        backup_packagedefinition_only(&game.path).unwrap();
+
+        let backed_up = game.path.join(".flmm_backup").join("packagedefinition.txt");
+        assert!(backed_up.exists());
+        assert_eq!(fs::read(&backed_up).unwrap(), b"original");
+    }
+
+    #[test]
+    fn backup_packagedefinition_only_fails_without_packagedefinition() {
+        // packagedefinition.txt が存在しない場合はエラー
+        let game = TempDir::new("bkp_missing");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        let result = backup_packagedefinition_only(&game.path);
+        assert!(result.is_err());
+    }
+
+    // ─── restore_packagedefinition ──────────────────────────────────
+
+    #[test]
+    fn restore_packagedefinition_overwrites_runtime_file() {
+        // バックアップから Runtime/packagedefinition.txt を復元
+        let game = TempDir::new("restore_pkg");
+        let runtime = game.path.join("Runtime");
+        let backup_dir = game.path.join(".flmm_backup");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&backup_dir).unwrap();
+
+        fs::write(backup_dir.join("packagedefinition.txt"), b"backup_content").unwrap();
+        fs::write(runtime.join("packagedefinition.txt"), b"modified_by_mod").unwrap();
+
+        restore_packagedefinition(&game.path).unwrap();
+
+        let restored = fs::read(runtime.join("packagedefinition.txt")).unwrap();
+        assert_eq!(restored, b"backup_content");
+    }
+
+    #[test]
+    fn restore_packagedefinition_fails_without_backup() {
+        // バックアップが存在しない場合はエラー
+        let game = TempDir::new("restore_missing");
+        let runtime = game.path.join("Runtime");
+        fs::create_dir_all(&runtime).unwrap();
+
+        let result = restore_packagedefinition(&game.path);
+        assert!(result.is_err());
+    }
+
+    // ─── migrate_legacy_backup ──────────────────────────────────────
+
+    #[test]
+    fn migrate_legacy_backup_moves_packagedefinition_and_removes_old() {
+        // 旧形式を新形式へ移行し、旧ディレクトリを削除
+        let game = TempDir::new("migrate");
+        let legacy = game.path.join("Runtime_backup_original");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("packagedefinition.txt"), b"legacy_pkg").unwrap();
+        fs::write(legacy.join("chunk0patch1.rpkg"), b"official").unwrap();
+
+        migrate_legacy_backup(&game.path).unwrap();
+
+        let new_pkg = game.path.join(".flmm_backup").join("packagedefinition.txt");
+        assert!(new_pkg.exists());
+        assert_eq!(fs::read(&new_pkg).unwrap(), b"legacy_pkg");
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn migrate_legacy_backup_skips_if_new_backup_exists() {
+        // 新形式が既に存在する場合は移行しない
+        let game = TempDir::new("migrate_skip");
+        let legacy = game.path.join("Runtime_backup_original");
+        let new_backup = game.path.join(".flmm_backup");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::create_dir_all(&new_backup).unwrap();
+        fs::write(legacy.join("packagedefinition.txt"), b"old").unwrap();
+        fs::write(new_backup.join("packagedefinition.txt"), b"new").unwrap();
+
+        migrate_legacy_backup(&game.path).unwrap();
+
+        assert!(legacy.exists());
+        assert_eq!(
+            fs::read(new_backup.join("packagedefinition.txt")).unwrap(),
+            b"new"
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_backup_skips_if_no_legacy() {
+        // 旧形式が存在しない場合は何もしない
+        let game = TempDir::new("migrate_noop");
+        let result = migrate_legacy_backup(&game.path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn migrate_legacy_backup_skips_if_no_packagedefinition_in_legacy() {
+        // 旧形式に packagedefinition.txt がない場合は移行しない
+        let game = TempDir::new("migrate_no_pkg");
+        let legacy = game.path.join("Runtime_backup_original");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("chunk0patch1.rpkg"), b"official").unwrap();
+
+        migrate_legacy_backup(&game.path).unwrap();
+
+        assert!(legacy.exists());
+        assert!(!game.path.join(".flmm_backup").exists());
+    }
+
+}
