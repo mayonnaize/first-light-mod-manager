@@ -1,0 +1,419 @@
+
+=== DIRECTORY TREE (max depth 3, source files only) ===
+.github
+.github\dependabot.yml
+.github\workflows
+.github\workflows\ci.yml
+.github\workflows\release.yml
+.gitignore
+.vscode
+.vscode\extensions.json
+.vscode\tasks.json
+AGENTS.md
+Builds
+Builds\First Light Mod Manager_0.1.0_x64-setup.exe
+Builds\First Light Mod Manager_0.1.0_x64_en-US.msi
+Builds\first-light-mod-manager.exe
+docs
+docs\codebase
+docs\codebase\.codebase-scan.txt
+LICENSE
+package-lock.json
+package.json
+playwright.config.js
+README.md
+scan_temp.py
+scripts
+scripts\sync-version.mjs
+scripts\tauri.ps1
+src
+src\assets
+src\assets\javascript.svg
+src\assets\tauri.svg
+src\index.html
+src\main.js
+src\styles.css
+src-tauri
+src-tauri\.gitignore
+src-tauri\build.rs
+src-tauri\capabilities
+src-tauri\capabilities\default.json
+src-tauri\Cargo.lock
+src-tauri\Cargo.toml
+src-tauri\gen
+src-tauri\gen\schemas
+src-tauri\gen\schemas\acl-manifests.json
+src-tauri\gen\schemas\capabilities.json
+src-tauri\gen\schemas\desktop-schema.json
+src-tauri\gen\schemas\windows-schema.json
+src-tauri\icons
+src-tauri\icons\128x128.png
+src-tauri\icons\128x128@2x.png
+src-tauri\icons\32x32.png
+src-tauri\icons\icon.icns
+src-tauri\icons\icon.ico
+src-tauri\icons\icon.png
+src-tauri\icons\Square107x107Logo.png
+src-tauri\icons\Square142x142Logo.png
+src-tauri\icons\Square150x150Logo.png
+src-tauri\icons\Square284x284Logo.png
+src-tauri\icons\Square30x30Logo.png
+src-tauri\icons\Square310x310Logo.png
+src-tauri\icons\Square44x44Logo.png
+src-tauri\icons\Square71x71Logo.png
+src-tauri\icons\Square89x89Logo.png
+src-tauri\icons\StoreLogo.png
+src-tauri\src
+src-tauri\src\commands.rs
+src-tauri\src\lib.rs
+src-tauri\src\main.rs
+src-tauri\tauri.conf.json
+superpowers
+superpowers\.claude-plugin
+superpowers\.claude-plugin\marketplace.json
+superpowers\.claude-plugin\plugin.json
+superpowers\.codex-plugin
+superpowers\.codex-plugin\plugin.json
+superpowers\.cursor-plugin
+superpowers\.cursor-plugin\plugin.json
+superpowers\.gitattributes
+superpowers\.github
+superpowers\.github\FUNDING.yml
+superpowers\.github\ISSUE_TEMPLATE
+superpowers\.github\ISSUE_TEMPLATE\bug_report.md
+superpowers\.github\ISSUE_TEMPLATE\config.yml
+superpowers\.github\ISSUE_TEMPLATE\feature_request.md
+superpowers\.github\ISSUE_TEMPLATE\platform_support.md
+superpowers\.github\PULL_REQUEST_TEMPLATE.md
+superpowers\.gitignore
+superpowers\.kimi-plugin
+superpowers\.kimi-plugin\plugin.json
+superpowers\.opencode
+superpowers\.opencode\INSTALL.md
+superpowers\.opencode\plugins
+superpowers\.opencode\plugins\superpowers.js
+superpowers\.pi
+superpowers\.pi\extensions
+superpowers\.pi\extensions\superpowers.ts
+superpowers\.pre-commit-config.yaml
+superpowers\.version-bump.json
+superpowers\AGENTS.md
+superpowers\assets
+superpowers\assets\app-icon.png
+superpowers\assets\superpowers-small.svg
+superpowers\CLAUDE.md
+superpowers\CODE_OF_CONDUCT.md
+superpowers\docs
+superpowers\docs\plans
+superpowers\docs\plans\2025-11-22-opencode-support-design.md
+superpowers\docs\plans\2025-11-22-opencode-support-implementation.md
+superpowers\docs\plans\2025-11-28-skills-improvements-from-user-feedback.md
+superpowers\docs\plans\2026-01-17-visual-brainstorming.md
+superpowers\docs\porting-to-a-new-harness.md
+superpowers\docs\README.kimi.md
+superpowers\docs\README.opencode.md
+superpowers\docs\superpowers
+superpowers\docs\superpowers\plans
+superpowers\docs\superpowers\specs
+superpowers\docs\testing.md
+superpowers\docs\windows
+superpowers\docs\windows\polyglot-hooks.md
+superpowers\gemini-extension.json
+superpowers\GEMINI.md
+superpowers\hooks
+superpowers\hooks\hooks-codex.json
+superpowers\hooks\hooks-cursor.json
+superpowers\hooks\hooks.json
+superpowers\hooks\run-hook.cmd
+superpowers\hooks\session-start
+superpowers\hooks\session-start-codex
+superpowers\LICENSE
+superpowers\package.json
+superpowers\README.md
+superpowers\RELEASE-NOTES.md
+superpowers\scripts
+superpowers\scripts\bump-version.sh
+superpowers\scripts\lint-shell.sh
+superpowers\scripts\sync-to-codex-plugin.sh
+superpowers\skills
+superpowers\skills\brainstorming
+superpowers\skills\brainstorming\scripts
+superpowers\skills\brainstorming\SKILL.md
+superpowers\skills\brainstorming\spec-document-reviewer-prompt.md
+superpowers\skills\brainstorming\visual-companion.md
+superpowers\skills\dispatching-parallel-agents
+superpowers\skills\dispatching-parallel-agents\SKILL.md
+superpowers\skills\executing-plans
+superpowers\skills\executing-plans\SKILL.md
+superpowers\skills\finishing-a-development-branch
+superpowers\skills\finishing-a-development-branch\SKILL.md
+superpowers\skills\receiving-code-review
+superpowers\skills\receiving-code-review\SKILL.md
+superpowers\skills\requesting-code-review
+superpowers\skills\requesting-code-review\code-reviewer.md
+superpowers\skills\requesting-code-review\SKILL.md
+superpowers\skills\subagent-driven-development
+superpowers\skills\subagent-driven-development\implementer-prompt.md
+superpowers\skills\subagent-driven-development\scripts
+superpowers\skills\subagent-driven-development\SKILL.md
+superpowers\skills\subagent-driven-development\task-reviewer-prompt.md
+superpowers\skills\systematic-debugging
+superpowers\skills\systematic-debugging\condition-based-waiting-example.ts
+superpowers\skills\systematic-debugging\condition-based-waiting.md
+superpowers\skills\systematic-debugging\CREATION-LOG.md
+superpowers\skills\systematic-debugging\defense-in-depth.md
+superpowers\skills\systematic-debugging\find-polluter.sh
+superpowers\skills\systematic-debugging\root-cause-tracing.md
+superpowers\skills\systematic-debugging\SKILL.md
+superpowers\skills\systematic-debugging\test-academic.md
+superpowers\skills\systematic-debugging\test-pressure-1.md
+superpowers\skills\systematic-debugging\test-pressure-2.md
+superpowers\skills\systematic-debugging\test-pressure-3.md
+superpowers\skills\test-driven-development
+superpowers\skills\test-driven-development\SKILL.md
+superpowers\skills\test-driven-development\testing-anti-patterns.md
+superpowers\skills\using-git-worktrees
+superpowers\skills\using-git-worktrees\SKILL.md
+superpowers\skills\using-superpowers
+superpowers\skills\using-superpowers\references
+superpowers\skills\using-superpowers\SKILL.md
+superpowers\skills\verification-before-completion
+superpowers\skills\verification-before-completion\SKILL.md
+superpowers\skills\writing-plans
+superpowers\skills\writing-plans\plan-document-reviewer-prompt.md
+superpowers\skills\writing-plans\SKILL.md
+superpowers\skills\writing-skills
+superpowers\skills\writing-skills\anthropic-best-practices.md
+superpowers\skills\writing-skills\examples
+superpowers\skills\writing-skills\graphviz-conventions.dot
+superpowers\skills\writing-skills\persuasion-principles.md
+superpowers\skills\writing-skills\render-graphs.js
+superpowers\skills\writing-skills\SKILL.md
+superpowers\skills\writing-skills\testing-skills-with-subagents.md
+superpowers\tests
+superpowers\tests\antigravity
+superpowers\tests\antigravity\run-tests.sh
+superpowers\tests\antigravity\test-antigravity-tools.sh
+superpowers\tests\brainstorm-server
+superpowers\tests\brainstorm-server\auth.test.js
+superpowers\tests\brainstorm-server\branding.test.js
+superpowers\tests\brainstorm-server\browser-launcher.test.js
+superpowers\tests\brainstorm-server\helper.test.js
+superpowers\tests\brainstorm-server\lifecycle.test.js
+
+=== STACK DETECTION (manifest files) ===
+
+--- package-lock.json ---
+{
+  "name": "first-light-mod-manager",
+  "version": "0.1.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "first-light-mod-manager",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@playwright/test": "^1.60.0",
+        "@tauri-apps/cli": "^2",
+        "monocart-reporter": "^2.11.2"
+      }
+    },
+    "node_modules/@playwright/test": {
+      "version": "1.60.0",
+      "resolved": "https://registry.npmjs.org/@playwright/test/-/test-1.60.0.tgz",
+      "integrity": "sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "playwright": "1.60.0"
+      },
+      "bin": {
+        "playwright": "cli.js"
+      },
+      "engines": {
+        "node": ">=18"
+      }
+    },
+    "node_modules/@tauri-apps/cli": {
+      "version": "2.11.2",
+      "resolved": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.11.2.tgz",
+      "integrity": "sha512-bk3HemqvGRoy+5D/dVMUQHKMYLglD0jVnMm/0iGMH6ufZ+p8r14m6BpIixwij3PBvZdvORUp1YifTD8QxVZ1Nw==",
+      "dev": true,
+      "license": "Apache-2.0 OR MIT",
+      "bin": {
+        "tauri": "tauri.js"
+      },
+      "engines": {
+        "node": ">= 10"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/tauri"
+      },
+      "optionalDependencies": {
+        "@tauri-apps/cli-darwin-arm64": "2.11.2",
+        "@tauri-apps/cli-darwin-x64": "2.11.2",
+        "@tauri-apps/cli-linux-arm-gnueabihf": "2.11.2",
+        "@tauri-apps/cli-linux-arm64-gnu": "2.11.2",
+        "@tauri-apps/cli-linux-arm64-musl": "2.11.2",
+        "@tauri-apps/cli-linux-riscv64-gnu": "2.11.2",
+        "@tauri-apps/cli-linux-x64-gnu": "2.11.2",
+        "@tauri-apps/cli-linux-x64-musl": "2.11.2",
+        "@tauri-apps/cli-win32-arm64-msvc": "2.11.2",
+        "@tauri-apps/cli-win32-ia32-msvc": "2.11.2",
+        "@tauri-apps/cli-win32-x64-msvc": "2.11.2"
+      }
+    },
+    "node_modules/@tauri-apps/cli-darwin-arm64": {
+      "version": "2.11.2",
+      "resolved": "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.11.2.tgz",
+      "integrity": "sha512-+4UZzLt+eOAEQCwgd+TqKgyUJMrvx+BgdXLLaqJYmPqzP+nE6YZr/hY6CWLYGQb8jFn99jEkmC6uA3tNvamA1w==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "Apache-2.0 OR MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tauri-apps/cli-darwin-x64": {
+      "version": "2.11.2",
+
+[TRUNCATED] Showing first 80 of 985 lines.
+--- package.json ---
+{
+  "name": "first-light-mod-manager",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:rust && npm run test:e2e",
+    "test:rust": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:PATH=($env:USERPROFILE + '/.cargo/bin;' + $env:PATH); cargo test --manifest-path src-tauri/Cargo.toml\"",
+    "test:e2e": "playwright test",
+    "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1",
+    "sync-version": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tauri-apps/cli": "^2",
+    "monocart-reporter": "^2.11.2"
+  }
+}
+
+
+=== ENTRY POINTS ===
+Found: src/main.js
+
+=== LINTING AND FORMATTING CONFIG ===
+No linting or formatting config files found in project root.
+
+=== ENVIRONMENT VARIABLE TEMPLATES ===
+No .env.example or .env.template found. Identify required environment variables by searching the code and config for environment variable reads.
+
+=== TODO / FIXME / HACK (production code only, test dirs excluded) ===
+scan_temp.py:28: TODO_LIMIT = 60
+scan_temp.py:303: """Search for TODO/FIXME/HACK comments."""
+scan_temp.py:303: """Search for TODO/FIXME/HACK comments."""
+scan_temp.py:303: """Search for TODO/FIXME/HACK comments."""
+scan_temp.py:305: patterns = ["TODO", "FIXME", "HACK"]
+scan_temp.py:305: patterns = ["TODO", "FIXME", "HACK"]
+scan_temp.py:305: patterns = ["TODO", "FIXME", "HACK"]
+scan_temp.py:331: return todos[:TODO_LIMIT]
+scan_temp.py:642: # TODOs
+scan_temp.py:645: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+scan_temp.py:645: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+scan_temp.py:645: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+scan_temp.py:647: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+scan_temp.py:647: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+scan_temp.py:647: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+superpowers\.pi\extensions\superpowers.ts:97: Pi does not ship a standard task-list tool. If an installed todo/task tool is available, use it. Otherwise track work in plan files or a repo-local \`TODO.md\` when task tracking is needed. Treat older \`TodoWrite\` references as this task-tracking action.`;
+
+=== GIT RECENT COMMITS (last 20) ===
+6d69d05 docs: update backup strategy to emphasize minimal backup of packagedefinition.txt
+aff11d2 docs: update backup description to reflect packagedefinition-only strategy
+4853787 refactor: replace full Runtime backup with packagedefinition-only backup
+2a164b7 docs: added  some major changes from upstream
+557a925 feat: initialize mod manager base structure with i18n support and configuration management
+17ed8a4 test: add Playwright E2E suite with Tauri backend mocking and create initial project entry point
+a5a9b94 ci: GitHub Actions CI/CD を追加
+a9334c0 docs: README 先頭に upstream との差分を英語で追記
+a447575 fix/feat/docs: packagedefinition.txt UTF-8 エラー修正・MOD パッチ番号自動採番・README 日本語化
+9050677 fix: make saveSettings function async in main.js to fix syntax error
+6adb6dc build: clean production release compilation
+8ab1edc fix: implement XTEA encryption/decryption for packagedefinition.txt
+ac25b86 feat: convert tauri commands to async to prevent UI blocking
+82e569d fix: normalize language code in main.js and add timeout to reqwest in commands.rs
+013ac26 debug: add global window error handler
+912b85e feat: implement Mod Toggle List and mod.json metadata support
+2e8d78a style: upgrade all emojis to vector SVG icons
+eca1174 feat: integrate Nexus Mods API update check and settings persistence
+dc9394c Implement dynamic language switching (i18n) for English and Portuguese
+f6a88d0 Translate user interface and backend messages to English
+
+=== HIGH-CHURN FILES (last 90 days, top 20) ===
+  11 src-tauri/src/commands.rs
+  11 src/main.js
+   9 src/index.html
+   9 Builds/First Light Mod Manager_0.1.0_x64-setup.exe
+   9 Builds/First Light Mod Manager_0.1.0_x64_en-US.msi
+   8 README.md
+   8 Builds/first-light-mod-manager.exe
+   4 package.json
+   4 src/styles.css
+   3 AGENTS.md
+   3 package-lock.json
+   3 src-tauri/src/lib.rs
+   2 src-tauri/capabilities/default.json
+   2 .github/workflows/ci.yml
+   2 .gitignore
+   2 tests/e2e/app.spec.js
+   1 playwright.config.js
+   1 tests/unit/utils.spec.js
+   1 .github/dependabot.yml
+   1 .github/workflows/release.yml
+
+=== MONOREPO SIGNALS ===
+No monorepo signals detected.
+
+=== CODE METRICS ===
+Total files scanned: 221
+Total lines of code: 16342
+
+Files by language:
+  Other: 198
+  JavaScript: 15
+  Rust: 4
+  Python: 2
+  TypeScript: 2
+
+Top 10 largest files:
+Builds\first-light-mod-manager.exe: 12185.5KB
+Builds\First Light Mod Manager_0.1.0_x64_en-US.msi: 4140.0KB
+Builds\First Light Mod Manager_0.1.0_x64-setup.exe: 2736.1KB
+test-results\assets\monocart-coverage-app.js: 473.4KB
+test-results\report.html: 369.8KB
+test-results\report.json: 252.9KB
+src-tauri\Cargo.lock: 141.3KB
+src-tauri\gen\schemas\desktop-schema.json: 130.0KB
+src-tauri\gen\schemas\windows-schema.json: 130.0KB
+src-tauri\icons\icon.icns: 96.1KB
+
+=== CI/CD PIPELINES ===
+CI/CD: GitHub Actions
+
+=== CONTAINERS & ORCHESTRATION ===
+No containerization configs detected.
+
+=== SECURITY & COMPLIANCE ===
+No security configs detected.
+
+=== PERFORMANCE & TESTING ===
+No performance testing configs detected.
+
+=== SCAN COMPLETE ===
