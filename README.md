@@ -20,6 +20,8 @@ This fork resolves critical bugs from the original version and introduces new fe
   * Integrated Nexus Mods API support, allowing the manager to automatically check if new versions of your installed mods are available.
 * **Remember Settings**:
   * Your language settings (English/Portuguese) and selected game folder are automatically saved when you close the app.
+* **Fast, Minimal Backup**:
+  * Instead of copying the entire `Runtime` folder (potentially several GB), only `packagedefinition.txt` is backed up. This makes first installation significantly faster and uses far less disk space.
 
 ---
 
@@ -45,7 +47,7 @@ Inspired by the modding tools developed for the **Hitman: World of Assassination
 - 🔍 **Auto-Detection** — Automatically finds your game install directory (Steam & Epic Games Store)
 - 📦 **One-Click Install** — Drag and drop `.rpkg` or `.zip` mod packages to install
 - ✍️ **Smart Manifest Patching** — Automatically edits `packagedefinition.txt` to inject mods cleanly
-- 🛡️ **Safe Backups** — Backs up only `packagedefinition.txt` before applying any mod (minimal, fast)
+- 🛡️ **Safe Backups** — Backs up your original `Runtime` folder before applying any mod
 - 🗑️ **One-Click Uninstall** — Fully restore your game to vanilla state instantly
 - 📋 **Activity Log** — Real-time log of every operation
 - ⚡ **Lightweight** — Under 10MB, no runtime dependencies required
@@ -78,7 +80,7 @@ Inspirado pelas ferramentas de modding da comunidade de **Hitman: World of Assas
 - 🔍 **Detecção Automática** — Encontra a pasta do jogo sozinho (Steam e Epic Games)
 - 📦 **Instalação Simplificada** — Arraste e solte arquivos `.rpkg` ou `.zip` diretamente na tela
 - ✍️ **Modificação Segura** — Atualiza o `packagedefinition.txt` injetando os mods de forma limpa
-- 🛡️ **Backup Original** — Salva apenas o `packagedefinition.txt` antes de instalar qualquer mod (mínimo e rápido)
+- 🛡️ **Backup Original** — Cria backup da pasta `Runtime` antes de instalar qualquer mod
 - 🗑️ **Restauração Rápida** — Remove todos os mods e restaura o jogo original com 1 clique
 - 📋 **Log em Tempo Real** — Acompanhe cada etapa da instalação
 - ⚡ **Leve** — Menos de 10MB, sem dependências extras
